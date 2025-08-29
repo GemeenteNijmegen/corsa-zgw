@@ -22,10 +22,10 @@ class NotificationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'actie'     => 'required|string|in:create,update,delete',
-            'kanaal'    => 'required|string|in:zaken,objecten',
+            'actie' => 'required|string|in:create,update,delete',
+            'kanaal' => 'required|string|in:zaken,objecten',
             'hoofdObject' => 'required|url',
-            'resourceUrl'   => 'required|url'
+            'resourceUrl' => 'required|url',
         ];
     }
 }

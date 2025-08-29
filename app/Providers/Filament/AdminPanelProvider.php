@@ -69,11 +69,11 @@ class AdminPanelProvider extends PanelProvider
                     NavigationGroup::make(__('Monitoring'))
                         ->items([
                             NavigationItem::make(__('Job monitor'))
-                                    ->icon('heroicon-m-share')
-                                    ->url(fn (): string => route('horizon.index'), true),
+                                ->icon('heroicon-m-share')
+                                ->url(fn (): string => route('horizon.index'), true),
                             NavigationItem::make(__('Telescope'))
-                                    ->icon('heroicon-o-code-bracket')
-                                    ->url(fn (): string => route('telescope'), true),
+                                ->icon('heroicon-o-code-bracket')
+                                ->url(fn (): string => route('telescope'), true),
                         ]),
                 ]);
             });

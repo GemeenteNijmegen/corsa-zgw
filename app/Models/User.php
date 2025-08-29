@@ -20,7 +20,7 @@ class User extends Authenticatable implements FilamentUser
     {
         return true; // every logged in user can access the panel
     }
-    
+
     /**
      * The attributes that are mass assignable.
      *
