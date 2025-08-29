@@ -24,6 +24,7 @@ class NotificationRequest extends FormRequest
         return [
             'actie' => 'required|string|in:create,update,delete',
             'kanaal' => 'required|string|in:zaken,objecten',
+            'resource' => 'required|string|in:zaak,status',
             'hoofdObject' => 'required|url',
             'resourceUrl' => 'required|url',
         ];

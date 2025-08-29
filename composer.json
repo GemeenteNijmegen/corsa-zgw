@@ -12,7 +12,8 @@
         "laravel/horizon": "^5.33",
         "laravel/sanctum": "^4.0",
         "laravel/telescope": "^5.11",
-        "laravel/tinker": "^2.10.1"
+        "laravel/tinker": "^2.10.1",
+        "woweb/openzaak": "dev-main"
     },
     "require-dev": {
         "driftingly/rector-laravel": "^2.0",
@@ -25,6 +26,12 @@
         "nunomaduro/collision": "^8.6",
         "pestphp/pest": "^4.0",
         "pestphp/pest-plugin-laravel": "^4.0"
+    },
+    "repositories": {
+        "woweb/openzaak": {
+            "type": "vcs",
+            "url": "git@github.com:WowebNL/laravel-openzaak.git"
+        }
     },
     "autoload": {
         "psr-4": {
