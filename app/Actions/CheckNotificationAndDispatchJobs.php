@@ -11,7 +11,7 @@ class CheckNotificationAndDispatchJobs
 
     public function __construct()
     {
-        $this->openzaak = new Openzaak();
+        $this->openzaak = new Openzaak;
     }
 
     public function handle(array $notification): void
@@ -35,13 +35,13 @@ class CheckNotificationAndDispatchJobs
         ) {
             // Dispatch job chain
 
-
         }
     }
 
     private function getZaakWithStatus(array $notification)
     {
-        $url = $notification['hoofdObject'] . '?' . http_build_query(['expand' => 'status,status.statustype']);
+        $url = $notification['hoofdObject'].'?'.http_build_query(['expand' => 'status,status.statustype']);
+
         return $this->openzaak->get($url);
     }
 }

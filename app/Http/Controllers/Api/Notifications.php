@@ -12,7 +12,7 @@ class Notifications extends Controller
     {
         $validated = $request->validated();
 
-        (new CheckNotificationAndDispatchJobs())->handle($validated);
+        (new CheckNotificationAndDispatchJobs)->handle($validated);
         // check which notification it is and activate the correct job bus
     }
 }
