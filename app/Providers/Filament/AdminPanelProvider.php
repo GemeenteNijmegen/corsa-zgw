@@ -2,10 +2,14 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Resources\Users\UserResource;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationBuilder;
+use Filament\Navigation\NavigationGroup;
+use Filament\Navigation\NavigationItem;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
@@ -55,6 +59,23 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
             ])
-            ->viteTheme('resources/css/filament/admin/theme.css');
+            ->viteTheme('resources/css/filament/admin/theme.css')
+            ->navigation(function (NavigationBuilder $builder): NavigationBuilder {
+                return $builder->groups([
+                    NavigationGroup::make(__('Instellingen'))
+                        ->items([
+                            ...UserResource::getNavigationItems(),
+                        ]),
+                    NavigationGroup::make(__('Monitoring'))
+                        ->items([
+                            NavigationItem::make(__('Job monitor'))
+                                    ->icon('heroicon-m-share')
+                                    ->url(fn (): string => route('horizon.index'), true),
+                            NavigationItem::make(__('Telescope'))
+                                    ->icon('heroicon-o-code-bracket')
+                                    ->url(fn (): string => route('telescope'), true),
+                        ]),
+                ]);
+            });
     }
 }
