@@ -5,6 +5,8 @@ namespace App\Providers;
 use Illuminate\Support\Facades\Gate;
 use Laravel\Horizon\Horizon;
 use Laravel\Horizon\HorizonApplicationServiceProvider;
+use Illuminate\Support\Facades\URL;
+
 
 class HorizonServiceProvider extends HorizonApplicationServiceProvider
 {
