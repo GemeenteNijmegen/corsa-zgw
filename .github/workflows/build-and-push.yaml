@@ -25,7 +25,7 @@ jobs:
       env:
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         REPOSITORY: mijn-services-stack-corsazgwecrrepository897374d5-sde4yfxo00cy
-        IMAGE_TAG: ${{ GITHUB_SHA }}
+        SHA_TAG: ${{ github.sha }}
       run: |
         # Build the image using the SHA tag
         docker build -t $REGISTRY/$REPOSITORY:$SHA_TAG .
