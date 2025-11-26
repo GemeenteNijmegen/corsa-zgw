@@ -25,7 +25,12 @@ jobs:
       env:
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         REPOSITORY: mijn-services-stack-corsazgwecrrepository897374d5-sde4yfxo00cy
-        IMAGE_TAG: latest
+        IMAGE_TAG: ${{ GITHUB_SHA }}
       run: |
-        docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
-        docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+        # Build the image using the SHA tag
+        docker build -t $REGISTRY/$REPOSITORY:$SHA_TAG .
+        # Tag image also as 'latest'
+        docker tag $REGISTRY/$REPOSITORY:$SHA_TAG $REGISTRY/$REPOSITORY:latest
+        # Push both tags
+        docker push $REGISTRY/$REPOSITORY:$SHA_TAG
+        docker push $REGISTRY/$REPOSITORY:latest
