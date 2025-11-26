@@ -12,7 +12,7 @@ class UserSeeder extends Seeder {
     $adminEmail = env('ADMIN_EMAIL');
     $adminPassword = env('ADMIN_PASSWORD');
 
-    if(!User::where('email', adminEmail)->first()){
+    if(!User::where('email', $adminEmail)->first()){
       User::factory()->create([
         'name' => 'Admin Admin',
         'email' => $adminEmail,
