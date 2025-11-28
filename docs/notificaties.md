@@ -192,5 +192,3 @@ gantt
     Batch verwerking start     :milestone, process_789, 19, 0s
     Batch verwerking Zaak 789  :active, p_789, 19, 2s
 ```
-```
-
