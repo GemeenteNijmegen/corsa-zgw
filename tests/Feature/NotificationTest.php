@@ -15,8 +15,8 @@ test('that incoming notification jobs are queued', function (): void {
       'create',
       'zaken',
       'zaak',
-      'https://mijn-services.accp.nijmegen.nl/open-zaak/zaken/api/v1/zaken/c27e4634-cddf-4c5a-b567-375177d7f854',
-      'https://mijn-services.accp.nijmegen.nl/open-zaak/zaken/api/v1/zaken/c27e4634-cddf-4c5a-b567-375177d7f854',
+      'http://example.com/zaken/api/v1/zaken/c27e4634-cddf-4c5a-b567-375177d7f854',
+      'http://example.com/zaken/api/v1/zaken/c27e4634-cddf-4c5a-b567-375177d7f854',
       '2025-11-28T10:25:19.741Z'
     );
     Queue::fake();
@@ -34,8 +34,8 @@ test('that incoming notification from random channels are ignored', function ():
       'create',
       'zaken',
       'zaak',
-      'https://mijn-services.accp.nijmegen.nl/open-zaak/zaken/api/v1/zaken/c27e4634-cddf-4c5a-b567-375177d7f854',
-      'https://mijn-services.accp.nijmegen.nl/open-zaak/zaken/api/v1/zaken/c27e4634-cddf-4c5a-b567-375177d7f854',
+      'http://example.com/zaken/api/v1/zaken/c27e4634-cddf-4c5a-b567-375177d7f854',
+      'http://example.com/zaken/api/v1/zaken/c27e4634-cddf-4c5a-b567-375177d7f854',
       '2025-11-28T10:25:19.741Z'
     );
     Queue::fake();
