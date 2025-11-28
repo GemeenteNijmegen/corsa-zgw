@@ -152,15 +152,19 @@ gantt
     Notificatie 1 ontvangen    :milestone, n1_123, 00, 0s
     Notificatie 2 ontvangen    :milestone, n2_123, 03, 0s
     Notificatie 3 ontvangen    :milestone, n3_123, 07, 0s
+    Notificatie 4 ontvangen    :milestone, n4_123, 17, 0s
     
     section Zaak 123 - Timer
     Timer Zaak 123 (5 sec)     :t1_123, 00, 5s
     Timer Zaak 123 reset       :t2_123, 03, 5s
     Timer Zaak 123 reset       :t3_123, 07, 5s
+    Timer Zaak 123 (5 sec)       :t3_123, 17, 5s
     
     section Zaak 123 - Verwerking
     Batch verwerking start     :milestone, process_123, 12, 0s
-    Batch verwerking Zaak 123  :active, p_123, 12, 3s
+    Batch verwerking Zaak 123  :active, p_123, 12, 6s
+    Batch verwerking start     :milestone, process_123, 22, 0s
+    Batch verwerking Zaak 123  :active, p_123, 22, 6s
     
     section Zaak 456 - Notificaties
     Notificatie 1 ontvangen    :milestone, n1_456, 13, 0s
@@ -188,5 +192,3 @@ gantt
     Batch verwerking start     :milestone, process_789, 19, 0s
     Batch verwerking Zaak 789  :active, p_789, 19, 2s
 ```
-```
-
