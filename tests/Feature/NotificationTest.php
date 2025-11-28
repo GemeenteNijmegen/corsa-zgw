@@ -5,7 +5,8 @@ use App\ValueObjects\OpenNotification;
 use Illuminate\Support\Facades\Queue;
 use Woweb\Openzaak\Openzaak;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use App\Models\Notification;
+// use App\Models\Notification;
+use Mockery\MockInterface;
 
 pest()->use(RefreshDatabase::class);
 
@@ -29,7 +30,9 @@ test('that incoming notification jobs are queued', function (): void {
 
 
 test('that incoming notification from random channels are ignored', function (): void {
-        
+  $this->partialMock(Openzaak::class, function(MockInterface $mock) {
+    $mock->shouldReceive('get')->once()->andReturn(collect(['','','ZAAK-TEST','','','','','','','','',[]]));
+  });
     $notification = new OpenNotification(
       'create',
       'zaken',
@@ -41,9 +44,9 @@ test('that incoming notification from random channels are ignored', function ():
     Queue::fake();
     // Dispatch the job
     $job = new CheckIncomingNotification($notification);
-    $result = $job->handle((app(Openzaak::class)));
+    $job->handle((app(Openzaak::class)));
 
     $this->assertDatabaseHas('notifications', [
-        'zaak_identificatie' => 'ZAAK-2025-0000000171'
+        'zaak_identificatie' => 'ZAAK-TEST'
       ]);
 });
