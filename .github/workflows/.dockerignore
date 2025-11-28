@@ -1,0 +1,41 @@
+# Laravel vendor and frontend deps
+vendor
+node_modules
+ 
+# Laravel cache and logs
+storage/logs
+storage/framework/cache/**
+!storage/framework/cache/
+ 
+# Environment files
+.env
+.env.*
+ 
+# PHPUnit and tests (for production builds)
+phpunit.xml
+phpunit.xml.dist
+tests
+ 
+# Bootstrap cache
+bootstrap/cache/**
+!bootstrap/cache/
+ 
+# Lock files
+composer.lock
+yarn.lock
+package-lock.json
+ 
+# Editor & OS junk
+*.swp
+*.swo
+*.bak
+*.tmp
+*.log
+*.idea
+*.vscode
+.DS_Store
+Thumbs.db
+ 
+# Git
+.git
+.gitignore
