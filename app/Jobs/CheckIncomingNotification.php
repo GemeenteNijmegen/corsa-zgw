@@ -9,7 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Woweb\Openzaak\Openzaak;
 
-class CheckIncommingNotification implements ShouldQueue
+class CheckIncomingNotification implements ShouldQueue
 {
     use Queueable;
 
