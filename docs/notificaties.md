@@ -22,7 +22,6 @@ worden verwerkt, anders moet eerst de 'zaak aangemaakt'-notificatie worden afgeh
 ## Afhandeling
 Van elke batch wordt een 'job chain' gedefinieerd in de applicatie (Laravel). 
 
-
 ```mermaid
 sequenceDiagram
     participant OZ as Open Zaak
