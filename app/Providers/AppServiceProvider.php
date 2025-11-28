@@ -3,11 +3,12 @@
 namespace App\Providers;
 
 use App\Filament\Resources\Users\Pages\EditUser;
+use App\Jobs\CheckIncomingNotification;
 use Filament\Support\Facades\FilamentView;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\URL;
+use Woweb\Openzaak\Openzaak;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -28,6 +29,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // URL::forceScheme('https');
+        $this->app->bindMethod([CheckIncomingNotification::class, 'handle'], fn ($job) => $job->handle(openzaak: app(Openzaak::class)));
     }
 }

@@ -27,6 +27,7 @@ class NotificationRequest extends FormRequest
             'resource' => 'required|string|in:zaak,status',
             'hoofdObject' => 'required|url',
             'resourceUrl' => 'required|url',
+            'aanmaakdatum' => 'required|date',
         ];
     }
 }
