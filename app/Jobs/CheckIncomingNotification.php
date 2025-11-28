@@ -18,22 +18,21 @@ class CheckIncomingNotification implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(Openzaak $openzaak): void
+    public function handle(Openzaak $openzaak)
     {
         if ($this->opennotification->kanaal != 'zaken') {
             // Don't process the notification
-            return;
+            return 'test';
         }
 
         // get the zaak from the hoofdobject URL
         $zaak = new Zaak(...$openzaak->get($this->opennotification->hoofdObject)->toArray());
-
+        
         // create the notification record in the database
-        Notification::create([
+        return Notification::create([
             'zaak_identificatie' => $zaak->identificatie,
             'notification' => $this->opennotification->toArray(),
             'processed' => false,
         ]);
-
     }
 }
