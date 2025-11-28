@@ -22,6 +22,7 @@ worden verwerkt, anders moet eerst de 'zaak aangemaakt'-notificatie worden afgeh
 ## Afhandeling
 Van elke batch wordt een 'job chain' gedefinieerd in de applicatie (Laravel). 
 
+
 ```mermaid
 sequenceDiagram
     participant OZ as Open Zaak
@@ -29,6 +30,7 @@ sequenceDiagram
     participant TS as Timer Service
     participant BP as Batch Processor
     participant LC as Corsa (Laravel)
+    participant DB as Corsa Database
 
     OZ->>NH: Notificatie 1 (Zaak ID: 123)
     NH->>NH: Check zaaknummer
@@ -49,43 +51,142 @@ sequenceDiagram
     NH->>BP: Verwerk batch (Zaak 123)
     
     BP->>BP: Analyseer batch en sorteer notificaties
-    BP->>BP: Bevat "Zaak aangemaakt"? Ja
     
-    BP->>LC: Verwerk eerst: "Zaak aangemaakt"
-    LC->>LC: Create Job Chain<br/>(Zaak aangemaakt)
-    LC->>BP: Job voltooid
-    
-    BP->>LC: Verwerk parallel:<br/>- Zaakstatus<br/>- Rol<br/>- Document
-    
-    par Parallel verwerking
-        LC->>LC: Job: Zaakstatus
-    and
-        LC->>LC: Job: Rol
-    and
-        LC->>LC: Job: Document
+    alt Bevat "Zaak aangemaakt"
+        Note over BP: Scenario A: Zaak aangemaakt aanwezig
+        BP->>LC: Verwerk eerst: "Zaak aangemaakt"
+        LC->>LC: Create Job Chain<br/>(Zaak aangemaakt)
+        LC->>DB: Sla zaak op
+        DB->>LC: Zaak opgeslagen
+        LC->>BP: Job voltooid
+        
+        BP->>LC: Verwerk parallel:<br/>- Zaakstatus<br/>- Rol<br/>- Document
+        
+        par Parallel verwerking
+            LC->>LC: Job: Zaakstatus
+        and
+            LC->>LC: Job: Rol
+        and
+            LC->>LC: Job: Document
+        end
+        
+        LC->>BP: Jobs voltooid
+        
+    else Geen "Zaak aangemaakt"
+        Note over BP: Scenario B: Controleer of zaak bestaat
+        BP->>LC: Controleer: Bestaat zaak al?
+        LC->>DB: SELECT zaak WHERE zaak_id = 123
+        
+        alt Zaak bestaat
+            DB->>LC: Zaak gevonden
+            LC->>BP: Ja, zaak bestaat
+            
+            Note over BP,LC: Zaak bestaat - verwerk notificaties
+            BP->>LC: Verwerk parallel:<br/>- Zaakstatus<br/>- Rol<br/>- Document
+            
+            par Parallel verwerking
+                LC->>LC: Job: Zaakstatus
+            and
+                LC->>LC: Job: Rol
+            and
+                LC->>LC: Job: Document
+            end
+            
+            LC->>BP: Jobs voltooid
+            
+        else Zaak bestaat niet
+            DB->>LC: Zaak niet gevonden
+            LC->>BP: Nee, zaak bestaat niet
+            
+            Note over BP: Notificaties negeren - zaak onbekend
+            BP->>BP: Log waarschuwing:<br/>Notificaties voor onbekende zaak
+            BP->>BP: Markeer batch als genegeerd
+        end
     end
     
-    LC->>BP: Jobs voltooid
     BP->>NH: Batch voltooid
 ```
-## Timer Reset Mechanisme
+
+## Flowchart
+
+```mermaid
+flowchart TD
+    Start([Timer afgelopen]) --> AnalyseerBatch[Analyseer batch]
+    
+    AnalyseerBatch --> CheckAangemaakt{Bevat batch<br/>'Zaak aangemaakt'?}
+    
+    CheckAangemaakt -->|Ja| ScenarioA[Scenario A:<br/>Zaak aangemaakt aanwezig]
+    CheckAangemaakt -->|Nee| ScenarioB[Scenario B:<br/>Controleer bestaande zaak]
+    
+    ScenarioA --> VerwerkZaak[1. Verwerk<br/>'Zaak aangemaakt']
+    VerwerkZaak --> SlaOp[Sla zaak op in Corsa]
+    SlaOp --> JobChain1[Create Job]
+    JobChain1 --> Wait[Wacht op voltooiing]
+    Wait --> VerwerkRestA[2. Verwerk overige<br/>notificaties parallel]
+    VerwerkRestA --> JobChainParallelA[Create parallel jobs]
+    
+    ScenarioB --> CheckExists{Bestaat zaak<br/>in Corsa?}
+    
+    CheckExists -->|Ja| ZaakBestaat[Zaak gevonden]
+    CheckExists -->|Nee| ZaakNiet[Zaak niet gevonden]
+    
+    ZaakBestaat --> VerwerkParallel[Verwerk notificaties<br/>parallel]
+    VerwerkParallel --> JobChainParallelB[Create parallel jobs:<br/>- Zaakstatus<br/>- Rol<br/>- Document]
+    
+    ZaakNiet --> LogWaarschuwing[Log waarschuwing:<br/>Onbekende zaak]
+    LogWaarschuwing --> NegeerId[Markeer batch<br/>als genegeerd]
+    NegeerId --> EindNegeer([Batch genegeerd])
+    
+    JobChainParallelA --> Voltooid([Batch voltooid])
+    JobChainParallelB --> Voltooid
+```
+
+## Batchingmechanisme met timer
 ```mermaid
 gantt
-    title Timer Reset bij Notificaties (Zaak 123)
+    title Timer Reset bij Notificaties - Meerdere Zaken
     dateFormat ss
     axisFormat %S sec
     
-    section Notificaties
-    Notificatie 1 ontvangen    :milestone, n1, 00, 0s
-    Notificatie 2 ontvangen    :milestone, n2, 03, 0s
-    Notificatie 3 ontvangen    :milestone, n3, 07, 0s
+    section Zaak 123 - Notificaties
+    Notificatie 1 ontvangen    :milestone, n1_123, 00, 0s
+    Notificatie 2 ontvangen    :milestone, n2_123, 03, 0s
+    Notificatie 3 ontvangen    :milestone, n3_123, 07, 0s
     
-    section Timer
-    Timer 1 (5 sec)            :t1, 00, 5s
-    Timer 2 (5 sec)            :t2, 03, 5s
-    Timer 3 (5 sec)            :t3, 07, 5s
+    section Zaak 123 - Timer
+    Timer Zaak 123 (5 sec)     :t1_123, 00, 5s
+    Timer Zaak 123 reset       :t2_123, 03, 5s
+    Timer Zaak 123 reset       :t3_123, 07, 5s
     
-    section Verwerking
-    Batch verwerking start     :milestone, process, 12, 0s
-    Batch verwerking           :active, 12, 3s
+    section Zaak 123 - Verwerking
+    Batch verwerking start     :milestone, process_123, 12, 0s
+    Batch verwerking Zaak 123  :active, p_123, 12, 3s
+    
+    section Zaak 456 - Notificaties
+    Notificatie 1 ontvangen    :milestone, n1_456, 13, 0s
+    Notificatie 2 ontvangen    :milestone, n2_456, 15, 0s
+    Notificatie 3 ontvangen    :milestone, n3_456, 17, 0s
+    Notificatie 4 ontvangen    :milestone, n4_456, 20, 0s
+    
+    section Zaak 456 - Timer
+    Timer Zaak 456 (5 sec)     :t1_456, 13, 5s
+    Timer Zaak 456 reset       :t2_456, 15, 5s
+    Timer Zaak 456 reset       :t3_456, 17, 5s
+    Timer Zaak 456 reset       :t4_456, 20, 5s
+    
+    section Zaak 456 - Verwerking
+    Batch verwerking start     :milestone, process_456, 25, 0s
+    Batch verwerking Zaak 456  :active, p_456, 25, 3s
+    
+    section Zaak 789 - Notificaties
+    Notificatie 1 ontvangen    :milestone, n1_789, 14, 0s
+    
+    section Zaak 789 - Timer
+    Timer Zaak 789 (5 sec)     :t1_789, 14, 5s
+    
+    section Zaak 789 - Verwerking
+    Batch verwerking start     :milestone, process_789, 19, 0s
+    Batch verwerking Zaak 789  :active, p_789, 19, 2s
 ```
+```
+
