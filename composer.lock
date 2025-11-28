@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "5a367fc9e3f2647c2b9e1b7cc09bc4fa",
+    "content-hash": "e5e92d1d5c400c048fa12135bf23681d",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -8420,6 +8420,50 @@
             "time": "2022-06-03T18:03:27+00:00"
         },
         {
+            "name": "woweb/laravel-zaakdms",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/WowebNL/laravel-zaakdms.git",
+                "reference": "647759f8243fb88eacb4a5f97a2df057dbef26f4"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/WowebNL/laravel-zaakdms/zipball/647759f8243fb88eacb4a5f97a2df057dbef26f4",
+                "reference": "647759f8243fb88eacb4a5f97a2df057dbef26f4",
+                "shasum": ""
+            },
+            "default-branch": true,
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Woweb\\Zaakdms\\ZaakdmsServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Woweb\\Zaakdms\\": "src/"
+                }
+            },
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Woweb B.V.",
+                    "email": "info@woweb.nl"
+                }
+            ],
+            "description": "A laravel wrapper for the Zaak- en Documentservices 1.1 (Soap)",
+            "support": {
+                "source": "https://github.com/WowebNL/laravel-zaakdms/tree/main",
+                "issues": "https://github.com/WowebNL/laravel-zaakdms/issues"
+            },
+            "time": "2025-11-28T09:16:41+00:00"
+        },
+        {
             "name": "woweb/openzaak",
             "version": "dev-main",
             "source": {
@@ -12007,6 +12051,7 @@
     "aliases": [],
     "minimum-stability": "stable",
     "stability-flags": {
+        "woweb/laravel-zaakdms": 20,
         "woweb/openzaak": 20
     },
     "prefer-stable": true,

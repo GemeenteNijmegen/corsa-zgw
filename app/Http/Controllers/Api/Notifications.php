@@ -2,9 +2,10 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\CheckNotificationAndDispatchJobs;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\NotificationRequest;
+use App\Jobs\CheckIncommingNotification;
+use App\ValueObjects\OpenNotification;
 
 class Notifications extends Controller
 {
@@ -12,7 +13,6 @@ class Notifications extends Controller
     {
         $validated = $request->validated();
 
-        (new CheckNotificationAndDispatchJobs)->handle($validated);
-        // check which notification it is and activate the correct job bus
+        CheckIncommingNotification::dispatch(opennotification: new OpenNotification(...$validated));
     }
 }

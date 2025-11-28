@@ -13,6 +13,7 @@
         "laravel/sanctum": "^4.0",
         "laravel/telescope": "^5.11",
         "laravel/tinker": "^2.10.1",
+        "woweb/laravel-zaakdms": "dev-main",
         "woweb/openzaak": "dev-main"
     },
     "require-dev": {
@@ -31,6 +32,10 @@
         "woweb/openzaak": {
             "type": "vcs",
             "url": "git@github.com:WowebNL/laravel-openzaak.git"
+        },
+        "woweb/laravel-zaakdms" : {
+            "type": "vcs",
+            "url": "git@github.com:WowebNL/laravel-zaakdms.git"
         }
     },
     "autoload": {
