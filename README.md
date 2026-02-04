@@ -25,7 +25,7 @@
 1. Clone the repository:
    ```bash
    git clone [repository-url]
-   cd eventloket
+   cd [repository-url]
    ```
 
 2. Copy the environment file and set your settings:
@@ -53,6 +53,11 @@ composer install
 npm install && npm run dev
 php artisan migrate
 php artisan serve
+```
+
+### Dependency updates
+```
+./vendor/bin/sail composer update
 ```
 
 ## Development Tools
