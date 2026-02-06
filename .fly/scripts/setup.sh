@@ -4,6 +4,6 @@ echo "* * * * * php /var/www/html/artisan schedule:run >> /var/log/artisan-sched
 # Service requires mtls files not env parameters. Container env parameters are used to configure the path to load each file from.
 echo "Setting up corsa MTLS"
 mkdir /cert
-echo $CORSA_MTLS_PRIVATE_KEY > /cert/corsa-mtls.crt
-echo $CORSA_MTLS_CERTIFICATE > /cert/corsa-mtls.key
+echo $CORSA_MTLS_PRIVATE_KEY > /cert/corsa-mtls.key
+echo $CORSA_MTLS_CERTIFICATE > /cert/corsa-mtls.crt
 echo $CORSA_MTLS_CA_BUNDLE > /cert/corsa-mtls.pem
