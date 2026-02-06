@@ -123,4 +123,6 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    'fixed_corsa_zaaktype_code' => env('FIXED_CORSA_ZAAKTYPE_CODE', '226'),
+
 ];

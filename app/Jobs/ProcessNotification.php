@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Notification;
+use App\Services\CorsaZaakdmsService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -17,7 +18,7 @@ class ProcessNotification implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(): void
+    public function handle(CorsaZaakdmsService $corsaZaakdmsService): void
     {
         Log::info('Processing notification', [
             'notification_id' => $this->notification->id,
@@ -35,9 +36,9 @@ class ProcessNotification implements ShouldQueue
             $actionKey = "{$actie}:{$resource}";
 
             match ($actionKey) {
-                'create:zaak' => $this->handleZaakAangemaakt(),
-                'create:status' => $this->handleZaakPartialUpdate(),
-                'create:zaakinformatieobject' => $this->handleDocumentAangemaakt(),
+                'create:zaak' => $this->handleZaakAangemaakt($corsaZaakdmsService),
+                'create:status' => $this->handleZaakPartialUpdate($corsaZaakdmsService),
+                'create:zaakinformatieobject' => $this->handleDocumentAangemaakt($corsaZaakdmsService),
                 default => $this->handleUnknownAction(),
             };
 
@@ -61,41 +62,40 @@ class ProcessNotification implements ShouldQueue
     /**
      * Handle zaak aangemaakt (case created) notification
      */
-    private function handleZaakAangemaakt(): void
+    private function handleZaakAangemaakt(CorsaZaakdmsService $corsaZaakdmsService): void
     {
         Log::debug('Handling zaak aangemaakt', [
             'notification_id' => $this->notification->id,
             'zaak_identificatie' => $this->notification->zaak_identificatie,
         ]);
 
-        // TODO: Implement logic to create case in Corsa
-
+        $corsaZaakdmsService->processZaakAangemaakt($this->notification);
     }
 
     /**
      * Handle zaak partially updated notification
      */
-    private function handleZaakPartialUpdate(): void
+    private function handleZaakPartialUpdate(CorsaZaakdmsService $corsaZaakdmsService): void
     {
         Log::debug('Handling zaak partial update', [
             'notification_id' => $this->notification->id,
             'zaak_identificatie' => $this->notification->zaak_identificatie,
         ]);
 
-        // TODO: Implement logic to partially update case in Corsa
+        $corsaZaakdmsService->processZaakPartialUpdate($this->notification);
     }
 
     /**
      * Handle document created notification
      */
-    private function handleDocumentAangemaakt(): void
+    private function handleDocumentAangemaakt(CorsaZaakdmsService $corsaZaakdmsService): void
     {
         Log::debug('Handling document aangemaakt', [
             'notification_id' => $this->notification->id,
             'zaak_identificatie' => $this->notification->zaak_identificatie,
         ]);
 
-        // TODO: Implement logic to create document in Corsa
+        $corsaZaakdmsService->processDocumentAangemaakt($this->notification);
     }
 
     /**
