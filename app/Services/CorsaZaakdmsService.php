@@ -11,15 +11,14 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Woweb\Openzaak\Openzaak;
+use Woweb\Zaakdms\Helper;
 use Woweb\Zaakdms\Zaakdms;
 
 class CorsaZaakdmsService
 {
-    private const DEFAULT_ZAAKNIVEAU = 1;
-
     private const DEFAULT_AUTEUR = 'OpenZaak';
 
-    private const DEFAULT_VERTRAUWELIJK_AANDUIDING = 'openbaar';
+    private const DEFAULT_VERTRAUWELIJK_AANDUIDING = 'zaakvertrouwelijk';
 
     private const TEMP_DISK = 'local';
 
@@ -50,6 +49,28 @@ class CorsaZaakdmsService
         $zaak = $this->fetchZaak($zaakUrl);
         $zaaktype = $this->fetchZaaktype($zaak->zaaktype);
 
+        // Check if zaak already exists in Corsa
+        try {
+            $existingZaak = $this->zaakdms->geefZaakDetails($zaak->identificatie);
+
+            if ($existingZaak && Helper::findInObject($existingZaak['response'], 'zknidentificatie') === $zaak->identificatie) {
+                Log::info('Zaak already exists in Corsa, skipping creation', [
+                    'notification_id' => $notification->id,
+                    'zaak_identificatie' => $zaak->identificatie,
+                    'zaak_url' => $zaakUrl,
+                ]);
+
+                return;
+            }
+        } catch (\Exception $e) {
+            // If zaak doesn't exist, ophalenZaak might throw an exception
+            // Continue with creation
+            Log::debug('Zaak does not exist in Corsa, proceeding with creation', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $zaak->identificatie,
+            ]);
+        }
+
         $options = $this->mapZaakToCorsaCreateOptions($zaak, $zaaktype);
 
         Log::debug('Corsa create zaak payload mapped', [
@@ -68,6 +89,7 @@ class CorsaZaakdmsService
         ]);
     }
 
+    // only status update for now, but can be extended with other partial updates if needed
     public function processZaakPartialUpdate(Notification $notification): void
     {
         $statusUrl = $notification->notification['resourceUrl'] ?? null;
@@ -85,6 +107,7 @@ class CorsaZaakdmsService
         ]);
 
         $statusData = $this->openzaak->get($statusUrl)->toArray();
+        // TODO value object of statustype with isEindstatus method
         $statusType = $this->resolveStatustype($statusData);
         $isEindstatus = (bool) Arr::get($statusType, 'isEindstatus', false);
 
@@ -94,15 +117,6 @@ class CorsaZaakdmsService
             'statustype_omschrijving' => Arr::get($statusType, 'omschrijving'),
             'is_eindstatus' => $isEindstatus,
         ]);
-
-        if (! $isEindstatus) {
-            Log::info('Skipping Corsa update for non-end status', [
-                'notification_id' => $notification->id,
-                'status_url' => $statusUrl,
-            ]);
-
-            return;
-        }
 
         $zaakUrl = $statusData['zaak'] ?? $this->resolveZaakUrlFromNotification($notification);
         if (! $zaakUrl) {
@@ -114,31 +128,30 @@ class CorsaZaakdmsService
 
         $zaak = $this->fetchZaak($zaakUrl);
 
-        $resultaat = $this->resolveResultaatOmschrijving($statusData, $statusType, $zaak);
-        $einddatum = $statusData['datumStatusGezet'] ?? $zaak->einddatum;
-
-        if (! $resultaat || ! $einddatum) {
-            Log::warning('Missing resultaat or einddatum for Corsa update', [
+        if (! $this->checkZaakExistenceInCorsa($zaak->identificatie, $notification)) {
+            Log::warning('Missing zaak in Corsa for partial update', [
                 'notification_id' => $notification->id,
-                'resultaat' => $resultaat,
-                'einddatum' => $einddatum,
+                'zaak_identificatie' => $zaak->identificatie,
             ]);
-            throw new RuntimeException('Missing resultaat or einddatum for Corsa update');
+            throw new RuntimeException('Missing zaak in Corsa for partial update');
         }
 
-        $options = [
+        $response = $this->zaakdms->actualiseerZaakstatus([
             'identificatie' => $zaak->identificatie,
-            'resultaat' => $resultaat,
-            'einddatum' => $this->formatZaakdmsDate($einddatum),
-        ];
-
-        $reference = $this->zaakdms->updateZaak($options);
-
-        Log::info('Corsa partial update done', [
-            'notification_id' => $notification->id,
-            'zaak_identificatie' => $zaak->identificatie,
-            'corsa_reference' => $reference,
+            'volgnummer' => $statusType['volgnummer'],
+            'omschrijving' => Arr::get($statusType, 'omschrijving') ?? 'Status update',
+            'gebruikerIdentificatie' => 'CorsaZaakdmsService',
         ]);
+
+        if ($response) {
+            Log::info('Corsa partial update done', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $zaak->identificatie,
+                'corsa_reference' => $response,
+            ]);
+        }
+
+        // TODO update resultaat if endstatus
     }
 
     public function processDocumentAangemaakt(Notification $notification): void
@@ -166,6 +179,14 @@ class CorsaZaakdmsService
                 'zoi_url' => $zoiUrl,
             ]);
             throw new RuntimeException('Missing informatieobject url for document create');
+        }
+
+        if (! $this->checkZaakExistenceInCorsa($notification->zaak_identificatie, $notification)) {
+            Log::warning('Missing zaak in Corsa for partial update', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $notification->zaak_identificatie,
+            ]);
+            throw new RuntimeException('Missing zaak in Corsa for partial update');
         }
 
         $documentData = $this->openzaak->get($documentUrl)->toArray();
@@ -222,6 +243,9 @@ class CorsaZaakdmsService
             ]);
         } finally {
             Storage::disk(self::TEMP_DISK)->delete($tempPath);
+            Log::info('Temp file deleted', [
+                'path' => $tempPath,
+            ]);
         }
     }
 
@@ -230,10 +254,6 @@ class CorsaZaakdmsService
         $expandedUrl = $this->addExpandToUrl($zaakUrl, [
             'rollen',
             'status',
-            'zaakobjecten',
-            'eigenschappen',
-            'resultaat',
-            'resultaat.resultaattype',
         ]);
 
         Log::debug('Fetching zaak from ZGW', ['zaak_url' => $expandedUrl]);
@@ -276,15 +296,6 @@ class CorsaZaakdmsService
         return $this->openzaak->get($statusTypeUrl)->toArray();
     }
 
-    private function resolveResultaatOmschrijving(array $statusData, array $statusType, Zaak $zaak): ?string
-    {
-        return Arr::get($statusType, 'omschrijving')
-            ?? Arr::get($statusType, 'omschrijvingGeneriek')
-            ?? Arr::get($statusData, 'statustoelichting')
-            ?? Arr::get($zaak->resultaattype, 'omschrijving')
-            ?? Arr::get($zaak->resultaattype, 'omschrijvingGeneriek');
-    }
-
     private function mapZaakToCorsaCreateOptions(Zaak $zaak, array $zaaktype): array
     {
         $zaaktypeCode = $this->resolveZaaktypeCode($zaaktype);
@@ -295,6 +306,7 @@ class CorsaZaakdmsService
             'omschrijving' => $zaak->omschrijving,
             'startdatum' => $this->formatZaakdmsDate($zaak->startdatum),
             'registratiedatum' => $this->formatZaakdmsDate($zaak->registratiedatum),
+            'zaakniveau' => 1,
             'zaaktype' => [
                 'omschrijving' => $zaaktype['omschrijving']
                     ?? $zaaktype['omschrijvingGeneriek']
@@ -334,7 +346,7 @@ class CorsaZaakdmsService
                 'natuurlijk_persoon' => [
                     'bsn' => $identificatie['inpBsn'] ?? null,
                     'identificatie' => $identificatie['anpIdentificatie'] ?? null,
-                    'geslachtsnaam' => $identificatie['geslachtsnaam'] ?? null,
+                    'geslachtsnaam' => $identificatie['geslachtsnaam'] ? $identificatie['geslachtsnaam'] : 'onbekend',
                 ],
             ];
         }
@@ -460,5 +472,27 @@ class CorsaZaakdmsService
         ]);
 
         return $tempPath;
+    }
+
+    public function checkZaakExistenceInCorsa(string $identificatie, Notification $notification): bool
+    {
+        $exists = false;
+        try {
+            $existingZaak = $this->zaakdms->geefZaakDetails($identificatie);
+
+            if ($existingZaak && Helper::findInObject($existingZaak['response'], 'zknidentificatie') === $identificatie) {
+                $exists = true;
+            }
+        } catch (\Exception $e) {
+            // If zaak doesn't exist, ophalenZaak might throw an exception
+            // Continue with creation
+            Log::debug('Zaak does not exist in Corsa, stopping notification', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $identificatie,
+            ]);
+
+        }
+
+        return $exists;
     }
 }

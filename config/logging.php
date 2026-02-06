@@ -126,6 +126,11 @@ return [
         'emergency' => [
             'path' => storage_path('logs/laravel.log'),
         ],
+        'zaakdms' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/zaakdms.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+        ],
 
     ],
 
