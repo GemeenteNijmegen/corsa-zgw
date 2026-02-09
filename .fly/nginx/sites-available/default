@@ -37,8 +37,9 @@ server {
     }
 
     location = /health {
-        access_log    off;
-        try_files $uri $uri/ /index.php?$query_string;
+        access_log off;
+        return 200 'OK';
+        add_header Content-Type text/plain;
     }
 
     location ~* \.(?:css(\.map)?|js(\.map)?|jpe?g|png|gif|ico|cur|heic|webp|tiff?|mp3|m4a|aac|ogg|midi?|wav|mp4|mov|webm|mpe?g|avi|ogv|flv|wmv)$ {
