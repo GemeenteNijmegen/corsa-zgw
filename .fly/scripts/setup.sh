@@ -8,5 +8,5 @@ cron
 echo "Setting up corsa MTLS"
 mkdir /cert
 echo "$CORSA_MTLS_PRIVATE_KEY" > /cert/corsa-mtls.key
-echo "$CORSA_MTLS_CERTIFICATE" > /cert/corsa-mtls.crt
-echo "$CORSA_MTLS_CA_BUNDLE" > /cert/corsa-mtls.pem
+echo "$CORSA_MTLS_CERTIFICATE" > /cert/corsa-mtls.pem
+echo "$ESB_CA_CERT" > /cert/esb-mtls.pem
