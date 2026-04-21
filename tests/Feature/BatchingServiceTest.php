@@ -391,5 +391,5 @@ test('processBatch chains resultaat as the last job', function () {
 
     $service->processBatch($batch);
 
-    Bus::assertChained([ProcessNotification::class, ProcessNotification::class, ProcessNotification::class]);
+    Bus::assertChained([HandleNotification::class, HandleNotification::class, HandleNotification::class]);
 });
