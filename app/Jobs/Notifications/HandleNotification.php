@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Jobs;
+namespace App\Jobs\Notifications;
 
 use App\Models\Notification;
 use App\Services\CorsaZaakdmsService;
@@ -9,11 +9,33 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 
-class ProcessNotification implements ShouldQueue
+class HandleNotification implements ShouldQueue
 {
     use Batchable, Queueable;
 
     public function __construct(private readonly Notification $notification) {}
+
+    public function displayName(): string
+    {
+        $actie = $this->notification->notification['actie'] ?? 'unknown';
+        $resource = $this->notification->notification['resource'] ?? 'unknown';
+
+        return "Handle {$actie}:{$resource}";
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function tags(): array
+    {
+        $actie = $this->notification->notification['actie'] ?? 'unknown';
+        $resource = $this->notification->notification['resource'] ?? 'unknown';
+
+        return [
+            "zaak:{$this->notification->zaak_identificatie}",
+            "action:{$actie}:{$resource}",
+        ];
+    }
 
     /**
      * Execute the job.

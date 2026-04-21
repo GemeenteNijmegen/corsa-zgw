@@ -3,7 +3,7 @@
 namespace App\Filament\Resources\Catalogi\Pages;
 
 use App\Filament\Resources\Catalogi\CatalogusResource;
-use App\Jobs\SyncAllCatalogiJob;
+use App\Jobs\Sync\SyncAllCatalogi;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Notifications\Notification;
@@ -20,7 +20,7 @@ class ListCatalogi extends ListRecords
                 ->label('Sync alle catalogi')
                 ->icon('heroicon-o-arrow-path')
                 ->action(function () {
-                    SyncAllCatalogiJob::dispatch();
+                    SyncAllCatalogi::dispatch();
 
                     Notification::make()
                         ->title('Sync gestart')

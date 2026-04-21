@@ -1,7 +1,7 @@
 <?php
 
-use App\Jobs\SyncAllCatalogiJob;
-use App\Jobs\SyncCatalogusJob;
+use App\Jobs\Sync\SyncAllCatalogi;
+use App\Jobs\Sync\SyncCatalogus;
 use App\Models\Catalogus;
 use Illuminate\Support\Facades\Queue;
 use Woweb\Openzaak\Api\CatalogiApi;
@@ -37,7 +37,7 @@ test('it creates new catalogi from ZGW that do not exist yet', function () {
         ['url' => 'https://openzaak.example.com/catalogi/api/v1/catalogussen/aaa', 'naam' => 'Catalogus A'],
     ]);
 
-    (new SyncAllCatalogiJob)->handle($openzaakMock);
+    (new SyncAllCatalogi)->handle($openzaakMock);
 
     expect(Catalogus::count())->toBe(1);
 
@@ -60,7 +60,7 @@ test('it does not duplicate catalogi that already exist', function () {
         ['url' => 'https://openzaak.example.com/catalogi/api/v1/catalogussen/aaa', 'naam' => 'Catalogus A'],
     ]);
 
-    (new SyncAllCatalogiJob)->handle($openzaakMock);
+    (new SyncAllCatalogi)->handle($openzaakMock);
 
     expect(Catalogus::count())->toBe(1);
 });
@@ -77,7 +77,7 @@ test('it deactivates active catalogi that no longer exist in ZGW', function () {
         ['url' => 'https://openzaak.example.com/catalogi/api/v1/catalogussen/aaa', 'naam' => 'Catalogus A'],
     ]);
 
-    (new SyncAllCatalogiJob)->handle($openzaakMock);
+    (new SyncAllCatalogi)->handle($openzaakMock);
 
     expect($gone->fresh()->is_active)->toBeFalse();
 });
@@ -91,13 +91,13 @@ test('it does not touch inactive catalogi that are gone from ZGW', function () {
 
     $openzaakMock = mockOpenzaakWithCatalogi([]);
 
-    (new SyncAllCatalogiJob)->handle($openzaakMock);
+    (new SyncAllCatalogi)->handle($openzaakMock);
 
     // Still exists and still inactive — no change
     expect($inactive->fresh()->is_active)->toBeFalse();
 });
 
-test('it dispatches SyncCatalogusJob for each active catalogus', function () {
+test('it dispatches SyncCatalogus for each active catalogus', function () {
     Queue::fake();
 
     $active = Catalogus::factory()->create([
@@ -109,7 +109,7 @@ test('it dispatches SyncCatalogusJob for each active catalogus', function () {
         ['url' => 'https://openzaak.example.com/catalogi/api/v1/catalogussen/active', 'naam' => 'Active'],
     ]);
 
-    (new SyncAllCatalogiJob)->handle($openzaakMock);
+    (new SyncAllCatalogi)->handle($openzaakMock);
 
-    Queue::assertPushed(SyncCatalogusJob::class, fn ($job) => true);
+    Queue::assertPushed(SyncCatalogus::class, fn ($job) => true);
 });

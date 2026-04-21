@@ -19,18 +19,18 @@ For a detailed description of the batching logic and processing order, see [docs
 
 ```
 POST /api/v1/notifications (Sanctum)
-  └─ CheckIncomingNotification (job)
+  └─ IngestNotification (job)
        └─ BatchingService: getOrCreateBatch() + addNotificationToBatch()
             └─ Cache timer (NOTIFICATION_BATCH_TIMEOUT seconds, resets on each new notification)
 
 [Scheduler: every minute]
-  └─ TriggerBatchProcessing (job)
-       └─ ProcessBatch (job, per expired batch)
+  └─ FlushExpiredBatches (job)
+       └─ DispatchBatch (job, per expired batch)
             └─ Bus::chain([
-                 ProcessNotification(create:zaak),       ← always first
-                 ProcessNotification(create:status),
-                 ProcessNotification(create:zaakinformatieobject),
-                 ProcessNotification(create:resultaat),  ← always last
+                 HandleNotification(create:zaak),            ← always first
+                 HandleNotification(create:status),
+                 HandleNotification(create:zaakinformatieobject),
+                 HandleNotification(create:resultaat),        ← always last
                ])
                  └─ CorsaZaakdmsService
                       ├─ creeerZaak()

@@ -2,7 +2,7 @@
 
 use App\Filament\Resources\ZaaktypeMappings\Pages\EditZaaktypeMapping;
 use App\Filament\Resources\ZaaktypeMappings\Pages\ListZaaktypeMappings;
-use App\Jobs\SyncAllCatalogiJob;
+use App\Jobs\Sync\SyncAllCatalogi;
 use App\Models\Catalogus;
 use App\Models\User;
 use App\Models\ZaaktypeMapping;
@@ -29,13 +29,13 @@ test('it shows zaaktype mappings in the table', function () {
         ->assertCanSeeTableRecords($mappings);
 });
 
-test('it can dispatch SyncAllCatalogiJob from the table toolbar action', function () {
+test('it can dispatch SyncAllCatalogi from the table toolbar action', function () {
     Queue::fake();
 
     Livewire::test(ListZaaktypeMappings::class)
         ->callTableAction('syncAll');
 
-    Queue::assertPushed(SyncAllCatalogiJob::class);
+    Queue::assertPushed(SyncAllCatalogi::class);
 });
 
 test('it can filter by active status', function () {

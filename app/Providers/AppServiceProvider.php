@@ -3,7 +3,7 @@
 namespace App\Providers;
 
 use App\Filament\Resources\Users\Pages\EditUser;
-use App\Jobs\CheckIncomingNotification;
+use App\Jobs\Notifications\IngestNotification;
 use App\Services\BatchingService;
 use Filament\Support\Facades\FilamentView;
 use Filament\View\PanelsRenderHook;
@@ -30,6 +30,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        $this->app->bindMethod([CheckIncomingNotification::class, 'handle'], fn ($job) => $job->handle(openzaak: app(Openzaak::class), batchingService: app(BatchingService::class)));
+        $this->app->bindMethod([IngestNotification::class, 'handle'], fn ($job) => $job->handle(openzaak: app(Openzaak::class), batchingService: app(BatchingService::class)));
     }
 }

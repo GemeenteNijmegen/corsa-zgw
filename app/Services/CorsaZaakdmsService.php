@@ -262,9 +262,10 @@ class CorsaZaakdmsService
         ]);
 
         $resultaatData = $this->openzaak->get($resultaatUrl)->toArray();
-        $resultaattype = $this->openzaak->get($resultaatData['resultaattype'])->toArray();
+        $resultaattypeUrl = $resultaatData['resultaattype'] ?? null;
+        $resultaattypeData = $resultaattypeUrl ? $this->openzaak->get($resultaattypeUrl)->toArray() : [];
 
-        $zaakUrl = $resultaatData['zaak'] ?? $notification->notification['hoofdObject'] ?? null;
+        $zaakUrl = $resultaatData['zaak'] ?? $this->resolveZaakUrlFromNotification($notification);
         if (! $zaakUrl) {
             Log::warning('Missing zaak url for resultaat notification', [
                 'notification_id' => $notification->id,
@@ -282,20 +283,21 @@ class CorsaZaakdmsService
             throw new RuntimeException('Missing zaak in Corsa for resultaat update');
         }
 
+        $dateFormat = config('zaakdms.date_format', 'Ymd');
         $einddatum = $zaak->einddatum
-            ? Carbon::parse($zaak->einddatum)->format('Ymd')
-            : Carbon::today()->format('Ymd');
+            ? Carbon::parse($zaak->einddatum)->format($dateFormat)
+            : Carbon::today()->format($dateFormat);
 
         $reference = $this->zaakdms->updateZaak([
             'identificatie' => $zaak->identificatie,
-            'resultaat' => $resultaattype['omschrijving'],
+            'resultaat' => $resultaattypeData['omschrijving'] ?? null,
             'einddatum' => $einddatum,
         ]);
 
         Log::info('Corsa update zaak resultaat done', [
             'notification_id' => $notification->id,
             'zaak_identificatie' => $zaak->identificatie,
-            'resultaattype_omschrijving' => $resultaattype['omschrijving'],
+            'resultaattype_omschrijving' => $resultaattypeData['omschrijving'] ?? null,
             'einddatum' => $einddatum,
             'corsa_reference' => $reference,
         ]);

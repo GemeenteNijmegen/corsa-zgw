@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Jobs;
+namespace App\Jobs\Notifications;
 
 use App\Models\Notification;
 use App\Models\ZaaktypeMapping;
@@ -12,11 +12,24 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Woweb\Openzaak\Openzaak;
 
-class CheckIncomingNotification implements ShouldQueue
+class IngestNotification implements ShouldQueue
 {
     use Queueable;
 
     public function __construct(private OpenNotification $opennotification) {}
+
+    public function displayName(): string
+    {
+        return "Ingest {$this->opennotification->actie}:{$this->opennotification->resource}";
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function tags(): array
+    {
+        return ["action:{$this->opennotification->actie}:{$this->opennotification->resource}"];
+    }
 
     /**
      * Execute the job.

@@ -1,6 +1,6 @@
 <?php
 
-use App\Jobs\CheckIncomingNotification;
+use App\Jobs\Notifications\IngestNotification;
 use App\Models\Batch;
 use App\Models\Notification;
 use App\Models\ZaaktypeMapping;
@@ -24,7 +24,7 @@ test('it skips processing when kanaal is not zaken', function () {
     $openzaakSpy = Mockery::spy(Openzaak::class);
     $batchingServiceSpy = Mockery::spy(BatchingService::class);
 
-    $job = new CheckIncomingNotification($openNotification);
+    $job = new IngestNotification($openNotification);
     $job->handle($openzaakSpy, $batchingServiceSpy);
 
     $openzaakSpy->shouldNotHaveReceived('get');
@@ -89,7 +89,7 @@ test('it processes when kanaal is zaken', function () {
                 && $batch->id === $fakeBatch->id;
         });
 
-    $job = new CheckIncomingNotification($openNotification);
+    $job = new IngestNotification($openNotification);
     $job->handle($openzaakMock, $batchingServiceMock);
 
     expect(Notification::count())->toBe(1);

@@ -3,8 +3,8 @@
 use App\Filament\Resources\Catalogi\Pages\CreateCatalogus;
 use App\Filament\Resources\Catalogi\Pages\EditCatalogus;
 use App\Filament\Resources\Catalogi\Pages\ListCatalogi;
-use App\Jobs\SyncAllCatalogiJob;
-use App\Jobs\SyncCatalogusJob;
+use App\Jobs\Sync\SyncAllCatalogi;
+use App\Jobs\Sync\SyncCatalogus;
 use App\Models\Catalogus;
 use App\Models\User;
 use Illuminate\Support\Facades\Queue;
@@ -30,16 +30,16 @@ test('it shows catalogi in the table', function () {
         ->assertCanSeeTableRecords($catalogi);
 });
 
-test('it can dispatch SyncAllCatalogiJob from the list header action', function () {
+test('it can dispatch SyncAllCatalogi from the list header action', function () {
     Queue::fake();
 
     Livewire::test(ListCatalogi::class)
         ->callAction('syncAll');
 
-    Queue::assertPushed(SyncAllCatalogiJob::class);
+    Queue::assertPushed(SyncAllCatalogi::class);
 });
 
-test('it can dispatch SyncCatalogusJob from the table row action', function () {
+test('it can dispatch SyncCatalogus from the table row action', function () {
     Queue::fake();
 
     $catalogus = Catalogus::factory()->create();
@@ -47,7 +47,7 @@ test('it can dispatch SyncCatalogusJob from the table row action', function () {
     Livewire::test(ListCatalogi::class)
         ->callTableAction('sync', $catalogus);
 
-    Queue::assertPushed(SyncCatalogusJob::class);
+    Queue::assertPushed(SyncCatalogus::class);
 });
 
 // --- Create ---

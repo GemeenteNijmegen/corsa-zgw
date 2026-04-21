@@ -1,13 +1,13 @@
 <?php
 
-namespace App\Jobs;
+namespace App\Jobs\Notifications;
 
 use App\Services\BatchingService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 
-class TriggerBatchProcessing implements ShouldQueue
+class FlushExpiredBatches implements ShouldQueue
 {
     use Queueable;
 
@@ -26,12 +26,12 @@ class TriggerBatchProcessing implements ShouldQueue
         ]);
 
         foreach ($batches as $batch) {
-            Log::info('Dispatching ProcessBatch job', [
+            Log::info('Dispatching DispatchBatch job', [
                 'batch_id' => $batch->id,
                 'zaak_identificatie' => $batch->zaak_identificatie,
             ]);
 
-            ProcessBatch::dispatch($batch)
+            DispatchBatch::dispatch($batch)
                 ->onQueue(config('batching.queue', 'default'));
         }
     }

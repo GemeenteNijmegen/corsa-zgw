@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Jobs;
+namespace App\Jobs\Sync;
 
 use App\Models\Catalogus;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -8,7 +8,7 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Woweb\Openzaak\Openzaak;
 
-class SyncAllCatalogiJob implements ShouldQueue
+class SyncAllCatalogi implements ShouldQueue
 {
     use Queueable;
 
@@ -18,7 +18,7 @@ class SyncAllCatalogiJob implements ShouldQueue
 
         $zgwUrls = $zgwCatalogi->pluck('url')->filter()->values();
 
-        Log::info('SyncAllCatalogiJob fetched catalogi from ZGW', [
+        Log::info('SyncAllCatalogi fetched catalogi from ZGW', [
             'count' => $zgwUrls->count(),
         ]);
 
@@ -38,7 +38,7 @@ class SyncAllCatalogiJob implements ShouldQueue
                     'is_active' => false,
                 ]);
 
-                Log::info('SyncAllCatalogiJob created new catalogus', ['url' => $url]);
+                Log::info('SyncAllCatalogi created new catalogus', ['url' => $url]);
             }
         }
 
@@ -48,7 +48,7 @@ class SyncAllCatalogiJob implements ShouldQueue
             ->each(function (Catalogus $catalogus) {
                 $catalogus->update(['is_active' => false]);
 
-                Log::warning('SyncAllCatalogiJob deactivated catalogus no longer in ZGW', [
+                Log::warning('SyncAllCatalogi deactivated catalogus no longer in ZGW', [
                     'catalogus_id' => $catalogus->id,
                     'url' => $catalogus->url,
                 ]);
@@ -57,12 +57,12 @@ class SyncAllCatalogiJob implements ShouldQueue
         // Dispatch zaaktype sync for all active catalogi
         $activeCatalogi = Catalogus::where('is_active', true)->get();
 
-        Log::info('SyncAllCatalogiJob dispatching sync for active catalogi', [
+        Log::info('SyncAllCatalogi dispatching sync for active catalogi', [
             'count' => $activeCatalogi->count(),
         ]);
 
         foreach ($activeCatalogi as $catalogus) {
-            SyncCatalogusJob::dispatch($catalogus);
+            SyncCatalogus::dispatch($catalogus);
         }
     }
 }

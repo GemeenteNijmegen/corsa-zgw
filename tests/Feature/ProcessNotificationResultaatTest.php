@@ -1,6 +1,6 @@
 <?php
 
-use App\Jobs\ProcessNotification;
+use App\Jobs\Notifications\HandleNotification;
 use App\Models\Batch;
 use App\Models\Notification;
 use App\Services\CorsaZaakdmsService;
@@ -31,7 +31,7 @@ function makeResultaatNotification(array $overrides = []): Notification
     ], $overrides));
 }
 
-// ─── ProcessNotification routing ─────────────────────────────────────────────
+// ─── HandleNotification routing ─────────────────────────────────────────────
 
 test('create:resultaat routes to processResultaatAangemaakt', function () {
     $notification = makeResultaatNotification();
@@ -41,7 +41,7 @@ test('create:resultaat routes to processResultaatAangemaakt', function () {
         ->once()
         ->with($notification);
 
-    $job = new ProcessNotification($notification);
+    $job = new HandleNotification($notification);
     $job->handle($serviceMock);
 
     expect($notification->fresh()->processed)->toBeTrue();
@@ -53,7 +53,7 @@ test('create:resultaat marks notification as processed on success', function () 
     $serviceMock = Mockery::mock(CorsaZaakdmsService::class);
     $serviceMock->shouldReceive('processResultaatAangemaakt')->once();
 
-    $job = new ProcessNotification($notification);
+    $job = new HandleNotification($notification);
     $job->handle($serviceMock);
 
     expect($notification->fresh()->processed)->toBeTrue();
@@ -67,7 +67,7 @@ test('create:resultaat rethrows exception from service', function () {
         ->once()
         ->andThrow(new RuntimeException('Corsa connection failed'));
 
-    $job = new ProcessNotification($notification);
+    $job = new HandleNotification($notification);
 
     expect(fn () => $job->handle($serviceMock))
         ->toThrow(RuntimeException::class, 'Corsa connection failed');

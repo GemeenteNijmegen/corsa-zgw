@@ -27,10 +27,10 @@ This application is an integration bridge between **OpenNotificaties** (a Dutch 
 |---|---|
 | `app/Services/BatchingService.php` | Timer logic, batch creation, job chain dispatch |
 | `app/Services/CorsaZaakdmsService.php` | All Corsa ZaakDMS SOAP calls |
-| `app/Jobs/ProcessBatch.php` | Locks a batch and builds the job chain |
-| `app/Jobs/ProcessNotification.php` | Routes a single notification to the correct handler |
-| `app/Jobs/CheckIncomingNotification.php` | Validates and batches an incoming notification |
-| `app/Jobs/TriggerBatchProcessing.php` | Dispatched by scheduler every minute |
+| `app/Jobs/Notifications/DispatchBatch.php` | Locks a batch and builds the job chain |
+| `app/Jobs/Notifications/HandleNotification.php` | Routes a single notification to the correct handler |
+| `app/Jobs/Notifications/IngestNotification.php` | Validates and batches an incoming notification |
+| `app/Jobs/Notifications/FlushExpiredBatches.php` | Dispatched by scheduler every minute |
 | `config/batching.php` | Batch timeout, max size, queue settings |
 | `app/ValueObjects/OpenNotification.php` | DTO for incoming webhook payload |
 | `app/ValueObjects/ZGW/Zaak.php` | DTO for a zaak fetched from OpenZaak (with expanded fields) |
@@ -39,10 +39,10 @@ This application is an integration bridge between **OpenNotificaties** (a Dutch 
 
 ```
 POST /api/v1/notifications
-  → CheckIncomingNotification
+  → IngestNotification
     → BatchingService (cache timer per zaak_identificatie)
       → [timer expires, every minute]
-        → ProcessBatch → Bus::chain([ProcessNotification, ...])
+        → DispatchBatch → Bus::chain([HandleNotification, ...])
           → CorsaZaakdmsService (creeerZaak / actualiseerZaakstatus / voegZaakdocumentToe / updateZaak)
 ```
 

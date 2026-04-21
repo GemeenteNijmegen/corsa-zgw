@@ -36,7 +36,7 @@ The largest untested class (499 lines). Covers all external I/O with OpenZaak an
 - `resolveZaakUrlFromNotification` resolves URL from notification payload
 - `mapZaakToCorsaCreateOptions` maps all required fields
 
-### `ProcessNotification` job (~8 tests)
+### `HandleNotification` job (~8 tests)
 
 - Dispatches `create:zaak` to `handleZaakAangemaakt`
 - Dispatches `create:status` to `handleZaakPartialUpdate`
@@ -52,7 +52,7 @@ The largest untested class (499 lines). Covers all external I/O with OpenZaak an
 
 ### `Api/Notifications` controller (~5 tests)
 
-- Valid payload is accepted, `CheckIncomingNotification` job is dispatched
+- Valid payload is accepted, `IngestNotification` job is dispatched
 - Returns 200 with the correct response shape
 - Unauthenticated request is rejected (401)
 - Request with missing required fields is rejected (422)
@@ -88,22 +88,22 @@ Use a dataset for field-level rules.
 
 ## Tier 3 — Supporting
 
-### `ProcessBatch` job (~4 tests)
+### `DispatchBatch` job (~4 tests)
 
 - `handle()` calls `BatchingService::processBatch()` with a fresh batch instance
 - `handle()` resolves `BatchingService` from the service container
 - Exception propagates out of `handle()`
 
-### `TriggerBatchProcessing` job (~4 tests)
+### `FlushExpiredBatches` job (~4 tests)
 
-- Dispatches one `ProcessBatch` job per unprocessed batch
+- Dispatches one `DispatchBatch` job per unprocessed batch
 - Dispatches nothing when there are no unprocessed batches
 - Jobs are dispatched on the configured queue
 
-### `ProcessNotificationBatches` command (~3 tests)
+### `FlushExpiredBatchesCommand` command (~3 tests)
 
 - Command exits with `SUCCESS`
-- Dispatches `TriggerBatchProcessing` job
+- Dispatches `FlushExpiredBatches` job
 - Output message confirms dispatch
 
 ### `Notification` model (~3 tests)

@@ -47,7 +47,7 @@ Beheert de centrale logica van het batchingsysteem.
 
 ### 3. **Verwerkingsjobs**
 
-#### ProcessBatch (`app/Jobs/ProcessBatch.php`)
+#### DispatchBatch (`app/Jobs/Notifications/DispatchBatch.php`)
 Verwerkt een batch wanneer de timer afloopt.
 
 **Logica:**
@@ -58,13 +58,14 @@ Verwerkt een batch wanneer de timer afloopt.
    - **Zonder "zaak aangemaakt"**: Maakt een jobketen die alle notificaties sequentieel verwerkt (met TODO: verificatie van zaakbestaan in Corsa als eerste stap)
 4. Markeert de batch als verwerkt
 
-#### ProcessNotification (`app/Jobs/ProcessNotification.php`)
+#### HandleNotification (`app/Jobs/Notifications/HandleNotification.php`)
 Verwerkt een individuele notificatie.
 
 **Ondersteunde actie-resource combinaties:**
 - `create:zaak`: Zaak aangemaakt → `handleZaakAangemaakt()`
 - `create:status`: Status aangemaakt → `handleZaakPartialUpdate()`
 - `create:zaakinformatieobject`: Document aangemaakt → `handleDocumentAangemaakt()`
+- `create:resultaat`: Resultaat aangemaakt → `handleResultaatAangemaakt()`
 - Overige: Onbekende actie → `handleUnknownAction()`
 
 **Stroom:**
@@ -73,16 +74,16 @@ Verwerkt een individuele notificatie.
 3. Markeert de notificatie als verwerkt
 4. Verhandelt fouten met gedetailleerde logging
 
-#### TriggerBatchProcessing (`app/Jobs/TriggerBatchProcessing.php`)
+#### FlushExpiredBatches (`app/Jobs/Notifications/FlushExpiredBatches.php`)
 Triggerjob die batches met verlopen timers opzoekt en verwerkt.
 
 Wordt elke minuut via de scheduler uitgevoerd.
 
-### 4. **Artisan-commando** (`app/Console/Commands/ProcessNotificationBatches.php`)
+### 4. **Artisan-commando** (`app/Console/Commands/FlushExpiredBatchesCommand.php`)
 Commando dat de batchverwerking activeert.
 
 ```bash
-php artisan notifications:process-batches
+php artisan notifications:flush-expired-batches
 ```
 
 Wordt automatisch elke minuut via de scheduler in `routes/console.php` uitgevoerd.
@@ -90,7 +91,7 @@ Wordt automatisch elke minuut via de scheduler in `routes/console.php` uitgevoer
 ## Verwerkingsstroom
 
 ```
-1. Notificatie binnenkomst → CheckIncomingNotification job
+1. Notificatie binnenkomst → IngestNotification job
    ↓
 2. BatchingService haalt/maakt een Batch
    ↓
@@ -100,19 +101,19 @@ Wordt automatisch elke minuut via de scheduler in `routes/console.php` uitgevoer
    ↓
 5. Volgende notificatie voor dezelfde zaak binnenkomst → Timer wordt opnieuw ingesteld
    ↓
-6. Timer afgelopen → ProcessNotificationBatches commando voert uit
+6. Timer afgelopen → notifications:flush-expired-batches commando voert uit
    ↓
-7. TriggerBatchProcessing zoekt batches met verlopen timers
+7. FlushExpiredBatches zoekt batches met verlopen timers
    ↓
-8. ProcessBatch haalt de gesorteerde notificaties op
+8. DispatchBatch haalt de gesorteerde notificaties op
    ↓
 9a. Indien "zaak aangemaakt" aanwezig:
-    - Maakt jobketen: ProcessNotification(create) → ProcessNotification(overige) sequentieel
+    - Maakt jobketen: HandleNotification(create) → HandleNotification(overige) sequentieel
 9b. Indien GEEN "zaak aangemaakt":
-    - Maakt jobketen met alle ProcessNotification jobs sequentieel
+    - Maakt jobketen met alle HandleNotification jobs sequentieel
     - TODO: Eerste job moet zaakbestaan in Corsa verifiëren
    ↓
-10. ProcessNotification verhandelt elke notificatie sequentieel
+10. HandleNotification verhandelt elke notificatie sequentieel
     ↓
 11. Batch wordt gemarkeerd als verwerkt
 ```

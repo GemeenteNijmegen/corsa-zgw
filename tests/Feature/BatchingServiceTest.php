@@ -1,6 +1,6 @@
 <?php
 
-use App\Jobs\ProcessNotification;
+use App\Jobs\Notifications\HandleNotification;
 use App\Models\Batch;
 use App\Models\Notification;
 use App\Services\BatchingService;
@@ -269,7 +269,7 @@ test('processBatch dispatches a chain when batch contains zaak aangemaakt', func
 
     $service->processBatch($batch);
 
-    Bus::assertChained([ProcessNotification::class]);
+    Bus::assertChained([HandleNotification::class]);
 });
 
 test('processBatch chains one job per notification when batch contains zaak aangemaakt with other notifications', function () {
@@ -281,7 +281,7 @@ test('processBatch chains one job per notification when batch contains zaak aang
 
     $service->processBatch($batch);
 
-    Bus::assertChained([ProcessNotification::class, ProcessNotification::class]);
+    Bus::assertChained([HandleNotification::class, HandleNotification::class]);
 });
 
 test('processBatch marks batch as processed after dispatching jobs', function () {
@@ -306,7 +306,7 @@ test('processBatch dispatches one chained job per notification when no zaak aang
 
     $service->processBatch($batch);
 
-    Bus::assertChained([ProcessNotification::class, ProcessNotification::class]);
+    Bus::assertChained([HandleNotification::class, HandleNotification::class]);
 });
 
 test('processBatch dispatches jobs on the configured queue', function () {
@@ -318,7 +318,7 @@ test('processBatch dispatches jobs on the configured queue', function () {
 
     $service->processBatch($batch);
 
-    Bus::assertChained([ProcessNotification::class]);
+    Bus::assertChained([HandleNotification::class]);
 });
 
 // ─── Batch model – hasResultaatAangemaakt ─────────────────────────────────────
@@ -391,5 +391,5 @@ test('processBatch chains resultaat as the last job', function () {
 
     $service->processBatch($batch);
 
-    Bus::assertChained([ProcessNotification::class, ProcessNotification::class, ProcessNotification::class]);
+    Bus::assertChained([HandleNotification::class, HandleNotification::class, HandleNotification::class]);
 });
