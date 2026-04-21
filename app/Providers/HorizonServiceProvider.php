@@ -19,7 +19,10 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
         // Horizon::routeMailNotificationsTo('example@example.com');
         $webhook = config('services.slack.webhook_url');
         $channel = config('services.slack.webhook_channel');
-        Horizon::routeSlackNotificationsTo($webhook, $channel);
+
+        if ($webhook) {
+            Horizon::routeSlackNotificationsTo($webhook, $channel);
+        }
     }
 
     /**
