@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Notification;
+use App\Models\ZaaktypeMapping;
 use App\Services\BatchingService;
 use App\ValueObjects\OpenNotification;
 use App\ValueObjects\ZGW\Zaak;
@@ -29,6 +30,16 @@ class CheckIncomingNotification implements ShouldQueue
 
         // get the zaak from the hoofdobject URL
         $zaak = new Zaak(...$openzaak->get($this->opennotification->hoofdObject)->toArray());
+
+        if (! ZaaktypeMapping::where('zaaktype_url', $zaak->zaaktype)->where('is_active', true)->exists()) {
+            Log::warning('Zaaktype not active or unknown, ignoring notification', [
+                'zaaktype_url' => $zaak->zaaktype,
+                'zaak_identificatie' => $zaak->identificatie,
+                'actie' => $this->opennotification->actie,
+            ]);
+
+            return;
+        }
 
         Log::info('Received notification', [
             'zaak_identificatie' => $zaak->identificatie,
