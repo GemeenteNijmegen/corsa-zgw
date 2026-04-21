@@ -71,7 +71,7 @@ Verwerkt een individuele notificatie.
 **Stroom:**
 1. Match op de combinatie van `actie:resource`
 2. Voert de overeenkomstige handler uit
-3. Markeert de notificatie als verwerkt
+3. Markeert de notificatie als verwerkt (`processed = true`, `processed_at = now()`)
 4. Verhandelt fouten met gedetailleerde logging
 
 #### FlushExpiredBatches (`app/Jobs/Notifications/FlushExpiredBatches.php`)
@@ -160,6 +160,7 @@ CREATE TABLE batches (
 ALTER TABLE notifications ADD COLUMN batch_id CHAR(36) NULL;
 ALTER TABLE notifications ADD FOREIGN KEY (batch_id) REFERENCES batches(id) ON DELETE CASCADE;
 ALTER TABLE notifications ADD INDEX (batch_id);
+ALTER TABLE notifications ADD COLUMN processed_at TIMESTAMP NULL;
 ```
 
 ## Migraties
@@ -173,6 +174,7 @@ php artisan migrate
 Gemaakte migraties:
 - `2025_11_28_132300_create_batches_table.php`: Maakt batchtabel aan
 - `2025_11_28_132301_add_batch_id_to_notifications_table.php`: Voegt relatie toe
+- `2026_04_21_125920_add_processed_at_to_notifications_table.php`: Voegt `processed_at` timestamp toe aan notificaties
 
 ## Gebruiksvoorbeelden
 

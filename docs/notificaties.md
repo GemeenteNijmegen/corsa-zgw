@@ -1,5 +1,9 @@
 # Verwerking notificaties open zaak naar Corsa
 
+## Admin-overzicht
+
+Het Filament admin-paneel biedt een read-only overzicht van alle ontvangen batches en notificaties via `/admin/batches` (sectie "Monitoring"). Batches zijn doorzoekbaar op `zaak_identificatie` en filterbaar op status. Per batch zijn de bijbehorende notificaties zichtbaar in verwerkingsvolgorde (create:zaak eerst, create:resultaat laatst), inclusief tijdstempel van verwerking en de volledige JSON-payload per notificatie.
+
 ## Volgordelijkheid van berichten
 Omdat notificaties in onvoorspelbare volgorde binnenkomen, én verwerking tijd kost, moeten notificaties (soms) in een specifieke volgorde worden verwerkt.
 Daarnaast is het zo dat onvoorspelbaar is welke notificaties binnenkomen en binnen moeten zijn voor een taak gestart kan worden. Daarom verwerken we

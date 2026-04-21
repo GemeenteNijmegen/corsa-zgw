@@ -66,7 +66,10 @@ class HandleNotification implements ShouldQueue
             };
 
             // Mark notification as processed
-            $this->notification->update(['processed' => true]);
+            $this->notification->update([
+                'processed' => true,
+                'processed_at' => now(),
+            ]);
 
             Log::info('Notification processed successfully', [
                 'notification_id' => $this->notification->id,

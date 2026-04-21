@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Resources\Batches\BatchResource;
 use App\Filament\Resources\Catalogi\CatalogusResource;
 use App\Filament\Resources\Users\UserResource;
 use App\Filament\Resources\ZaaktypeMappings\ZaaktypeMappingResource;
@@ -75,6 +76,7 @@ class AdminPanelProvider extends PanelProvider
                         ]),
                     NavigationGroup::make(__('Monitoring'))
                         ->items([
+                            ...BatchResource::getNavigationItems(),
                             NavigationItem::make(__('Job monitor'))
                                 ->icon('heroicon-m-share')
                                 ->url(fn (): string => route('horizon.index'), true),
