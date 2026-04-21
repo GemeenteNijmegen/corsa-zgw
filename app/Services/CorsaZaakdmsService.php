@@ -108,15 +108,12 @@ class CorsaZaakdmsService
         ]);
 
         $statusData = $this->openzaak->get($statusUrl)->toArray();
-        // TODO value object of statustype with isEindstatus method
         $statusType = $this->resolveStatustype($statusData);
-        $isEindstatus = (bool) Arr::get($statusType, 'isEindstatus', false);
 
         Log::debug('Corsa partial update status resolved', [
             'notification_id' => $notification->id,
             'status_uuid' => $statusData['uuid'] ?? null,
             'statustype_omschrijving' => Arr::get($statusType, 'omschrijving'),
-            'is_eindstatus' => $isEindstatus,
         ]);
 
         $zaakUrl = $statusData['zaak'] ?? $this->resolveZaakUrlFromNotification($notification);
@@ -151,8 +148,6 @@ class CorsaZaakdmsService
                 'corsa_reference' => $response,
             ]);
         }
-
-        // TODO update resultaat if endstatus
     }
 
     public function processDocumentAangemaakt(Notification $notification): void
@@ -254,10 +249,14 @@ class CorsaZaakdmsService
     {
         $resultaatUrl = $notification->notification['resourceUrl'] ?? null;
         if (! $resultaatUrl) {
+            Log::warning('Missing resultaat url for resultaat notification', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $notification->zaak_identificatie,
+            ]);
             throw new RuntimeException('Missing resultaat url for resultaat notification');
         }
 
-        Log::info('Corsa resultaat update start', [
+        Log::info('Corsa update zaak resultaat start', [
             'notification_id' => $notification->id,
             'resultaat_url' => $resultaatUrl,
         ]);
@@ -267,6 +266,13 @@ class CorsaZaakdmsService
         $resultaattypeData = $resultaattypeUrl ? $this->openzaak->get($resultaattypeUrl)->toArray() : [];
 
         $zaakUrl = $resultaatData['zaak'] ?? $this->resolveZaakUrlFromNotification($notification);
+        if (! $zaakUrl) {
+            Log::warning('Missing zaak url for resultaat notification', [
+                'notification_id' => $notification->id,
+            ]);
+            throw new RuntimeException('Missing zaak url for resultaat notification');
+        }
+
         $zaak = $this->fetchZaak($zaakUrl);
 
         if (! $this->checkZaakExistenceInCorsa($zaak->identificatie, $notification)) {
@@ -288,9 +294,11 @@ class CorsaZaakdmsService
             'einddatum' => $einddatum,
         ]);
 
-        Log::info('Corsa resultaat update done', [
+        Log::info('Corsa update zaak resultaat done', [
             'notification_id' => $notification->id,
             'zaak_identificatie' => $zaak->identificatie,
+            'resultaattype_omschrijving' => $resultaattypeData['omschrijving'] ?? null,
+            'einddatum' => $einddatum,
             'corsa_reference' => $reference,
         ]);
     }

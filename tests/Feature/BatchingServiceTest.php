@@ -320,3 +320,76 @@ test('processBatch dispatches jobs on the configured queue', function () {
 
     Bus::assertChained([HandleNotification::class]);
 });
+
+// ─── Batch model – hasResultaatAangemaakt ─────────────────────────────────────
+
+test('hasResultaatAangemaakt returns true when batch has create:resultaat', function () {
+    $batch = makeBatch();
+    makeNotification($batch, 'create', 'resultaat');
+
+    expect($batch->hasResultaatAangemaakt())->toBeTrue();
+});
+
+test('hasResultaatAangemaakt returns false when batch has no resultaat notification', function () {
+    $batch = makeBatch();
+    makeNotification($batch, 'create', 'status');
+
+    expect($batch->hasResultaatAangemaakt())->toBeFalse();
+});
+
+test('hasResultaatAangemaakt returns false for empty batch', function () {
+    $batch = makeBatch();
+
+    expect($batch->hasResultaatAangemaakt())->toBeFalse();
+});
+
+// ─── Batch model – getNotificationsSorted ordering ───────────────────────────
+
+test('getNotificationsSorted places create:resultaat after all other notifications', function () {
+    $batch = makeBatch();
+    makeNotification($batch, 'create', 'resultaat');
+    makeNotification($batch, 'create', 'status');
+    makeNotification($batch, 'create', 'zaakinformatieobject');
+
+    $sorted = $batch->getNotificationsSorted();
+
+    expect($sorted->last()->notification['resource'])->toBe('resultaat');
+});
+
+test('getNotificationsSorted places create:zaak before create:resultaat', function () {
+    $batch = makeBatch();
+    makeNotification($batch, 'create', 'resultaat');
+    makeNotification($batch, 'create', 'zaak');
+
+    $sorted = $batch->getNotificationsSorted();
+
+    expect($sorted->first()->notification['resource'])->toBe('zaak')
+        ->and($sorted->last()->notification['resource'])->toBe('resultaat');
+});
+
+test('getNotificationsSorted places create:zaak first, resultaat last, others in the middle', function () {
+    $batch = makeBatch();
+    makeNotification($batch, 'create', 'resultaat');
+    makeNotification($batch, 'create', 'status');
+    makeNotification($batch, 'create', 'zaak');
+
+    $sorted = $batch->getNotificationsSorted();
+
+    expect($sorted->first()->notification['resource'])->toBe('zaak')
+        ->and($sorted->last()->notification['resource'])->toBe('resultaat');
+});
+
+// ─── processBatch – with resultaat ───────────────────────────────────────────
+
+test('processBatch chains resultaat as the last job', function () {
+    Bus::fake();
+    $batch = makeBatch();
+    makeNotification($batch, 'create', 'zaak');
+    makeNotification($batch, 'create', 'status');
+    makeNotification($batch, 'create', 'resultaat');
+    $service = new BatchingService;
+
+    $service->processBatch($batch);
+
+    Bus::assertChained([ProcessNotification::class, ProcessNotification::class, ProcessNotification::class]);
+});

@@ -122,7 +122,7 @@ class HandleNotification implements ShouldQueue
     }
 
     /**
-     * Handle resultaat created notification
+     * Handle resultaat aangemaakt (result created) notification
      */
     private function handleResultaatAangemaakt(CorsaZaakdmsService $corsaZaakdmsService): void
     {

@@ -13,11 +13,13 @@ This application is an integration bridge between **OpenNotificaties** (a Dutch 
 | **Zaak** | A case or dossier in the ZGW system |
 | **Zaaktype** | The type/category of a zaak |
 | **Zaakinformatieobject** | A document linked to a zaak |
+| **Resultaat** | The outcome/result of a zaak, set when the case is closed |
+| **Resultaattype** | The type/category of a resultaat, from the catalogi |
 | **Batch** | A group of notifications for the same zaak that arrive within the timer window |
 
 ### Critical Ordering Rule
 
-`create:zaak` must **always be the first job** in a `Bus::chain()`. All other notification types (status, document) can only be processed after the zaak exists in Corsa. This invariant is enforced in `BatchingService` and must be preserved in any changes to processing logic.
+`create:zaak` must **always be the first job** in a `Bus::chain()`. `create:resultaat` must **always be the last job**. All other notification types (status, document) run in between. Status and document notifications can only be processed after the zaak exists in Corsa. The resultaat must be processed last because it closes the case with a final outcome. This ordering is enforced in `BatchingService` (via sort weights in `Batch::getNotificationsSorted()`) and must be preserved in any changes to processing logic.
 
 ### Key Files
 
@@ -41,7 +43,7 @@ POST /api/v1/notifications
     → BatchingService (cache timer per zaak_identificatie)
       → [timer expires, every minute]
         → DispatchBatch → Bus::chain([HandleNotification, ...])
-          → CorsaZaakdmsService (creeerZaak / actualiseerZaakstatus / voegZaakdocumentToe)
+          → CorsaZaakdmsService (creeerZaak / actualiseerZaakstatus / voegZaakdocumentToe / updateZaak)
 ```
 
 ### Documentation
