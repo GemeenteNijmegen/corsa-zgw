@@ -127,6 +127,12 @@ return [
             'path' => storage_path('logs/laravel.log'),
         ],
         'zaakdms' => [
+            'driver' => 'stack',
+            'channels' => explode(',', (string) env('LOG_ZAAKDMS_STACK', 'zaakdms_single')),
+            'ignore_exceptions' => false,
+        ],
+
+        'zaakdms_single' => [
             'driver' => 'single',
             'path' => storage_path('logs/zaakdms.log'),
             'level' => env('LOG_LEVEL', 'debug'),
