@@ -3,6 +3,7 @@
 use App\Jobs\CheckIncomingNotification;
 use App\Models\Batch;
 use App\Models\Notification;
+use App\Models\ZaaktypeMapping;
 use App\Services\BatchingService;
 use App\ValueObjects\OpenNotification;
 use Illuminate\Support\Facades\Log;
@@ -64,6 +65,11 @@ test('it processes when kanaal is zaken', function () {
         ->once()
         ->with($openNotification->hoofdObject)
         ->andReturn(collect($zaakData));
+
+    // Create an active zaaktype mapping so the notification is not filtered
+    ZaaktypeMapping::factory()->active()->create([
+        'zaaktype_url' => 'https://example.com/zaaktypen/123',
+    ]);
 
     // Don't set ID, let Laravel generate it
     $fakeBatch = Batch::create([

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Notification;
+use App\Models\ZaaktypeMapping;
 use App\ValueObjects\ZGW\Zaak;
 use Carbon\Carbon;
 use Illuminate\Support\Arr;
@@ -371,9 +372,21 @@ class CorsaZaakdmsService
 
     private function resolveZaaktypeCode(array $zaaktype): string
     {
-        // TODO match zaaktype code based on configuration or mapping
-        // For now, return fixed env value
-        return config('app.fixed_corsa_zaaktype_code');
+        $zaaktypeUrl = $zaaktype['url'] ?? null;
+
+        if (! $zaaktypeUrl) {
+            throw new RuntimeException('Cannot resolve zaaktype code: zaaktype url is missing');
+        }
+
+        $code = ZaaktypeMapping::where('zaaktype_url', $zaaktypeUrl)
+            ->where('is_active', true)
+            ->value('corsa_zaaktype_code');
+
+        if (! $code) {
+            throw new RuntimeException("Cannot resolve zaaktype code: no active mapping found for zaaktype url [{$zaaktypeUrl}]");
+        }
+
+        return $code;
     }
 
     private function formatZaakdmsDate(?string $date): ?string

@@ -2,7 +2,9 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Resources\Catalogi\CatalogusResource;
 use App\Filament\Resources\Users\UserResource;
+use App\Filament\Resources\ZaaktypeMappings\ZaaktypeMappingResource;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -62,6 +64,11 @@ class AdminPanelProvider extends PanelProvider
             ->viteTheme('resources/css/filament/admin/theme.css')
             ->navigation(function (NavigationBuilder $builder): NavigationBuilder {
                 return $builder->groups([
+                    NavigationGroup::make(__('ZGW'))
+                        ->items([
+                            ...CatalogusResource::getNavigationItems(),
+                            ...ZaaktypeMappingResource::getNavigationItems(),
+                        ]),
                     NavigationGroup::make(__('Instellingen'))
                         ->items([
                             ...UserResource::getNavigationItems(),
