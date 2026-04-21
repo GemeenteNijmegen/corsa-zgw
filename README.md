@@ -2,22 +2,105 @@
 
 ## About
 
+Corsa ZGW is an integration service that bridges [OpenNotificaties](https://open-notificaties.readthedocs.io/) (a Dutch government notification system) and Corsa ZaakDMS (a document management system). It receives case (zaak) notifications over an API, batches them per case, and processes them in the correct order to keep the DMS up to date.
+
+The application handles three types of notifications:
+
+- **Zaak aangemaakt** (case created): always processed first to ensure the case exists in Corsa before any related data is added.
+- **Zaakstatus** (status update): updates the current status of an existing case in Corsa.
+- **Zaakinformatieobject** (document attached): downloads and uploads a document from OpenZaak to Corsa.
+
+A cache-based timer groups all notifications for a single case that arrive within a configurable window. When the timer expires, notifications are processed as an ordered job chain via Laravel's `Bus::chain()`, guaranteeing that `create:zaak` always runs first.
+
+For a detailed description of the batching logic and processing order, see [docs/batching_system.md](docs/batching_system.md) and [docs/notificaties.md](docs/notificaties.md).
+
+## Architecture
+
+```
+POST /api/v1/notifications (Sanctum)
+  └─ CheckIncomingNotification (job)
+       └─ BatchingService: getOrCreateBatch() + addNotificationToBatch()
+            └─ Cache timer (NOTIFICATION_BATCH_TIMEOUT seconds, resets on each new notification)
+
+[Scheduler: every minute]
+  └─ TriggerBatchProcessing (job)
+       └─ ProcessBatch (job, per expired batch)
+            └─ Bus::chain([
+                 ProcessNotification(create:zaak),   ← always first
+                 ProcessNotification(status),
+                 ProcessNotification(document), ...
+               ])
+                 └─ CorsaZaakdmsService
+                      ├─ creeerZaak()
+                      ├─ actualiseerZaakstatus()
+                      └─ voegZaakdocumentToe()
+```
+
+## API
+
+The application exposes a single webhook endpoint. OpenNotificaties must be configured to POST to it.
+
+```
+POST /api/v1/notifications
+Authorization: Bearer {sanctum-token}
+Content-Type: application/json
+```
+
+Three notification types are accepted. See [docs/API-Call-mapping.md](docs/API-Call-mapping.md) for full payload examples.
+
+| `resource`              | Effect in Corsa                     |
+|-------------------------|-------------------------------------|
+| `zaak`                  | Creates a new zaak                  |
+| `status`                | Updates the zaak status             |
+| `zaakinformatieobject`  | Uploads a document to the zaak      |
 
 ## Technical Stack
 
 - **Framework**: Laravel 12.x
-- **PHP Version**: PHP 8.2+
-- **Frontend**: Tailwind CSS, Vite
-- **Admin Panel**: Filament 3.x
-- **Database**: MySQL
-- **Queue System**: Redis
+- **PHP Version**: PHP 8.4
+- **Frontend**: Tailwind CSS v4, Vite
+- **Admin Panel**: Filament v4
+- **Database**: PostgreSQL
+- **Queue System**: Redis (via Laravel Horizon)
 - **Docker Support**: Laravel Sail
+
+## Configuration
+
+The following environment variables must be configured:
+
+### OpenZaak (ZGW API)
+
+| Variable | Description |
+|---|---|
+| `OPENZAAK_URL` | Base URL of the OpenZaak instance |
+| `OPENZAAK_CLIENT_ID` | OAuth client ID for OpenZaak |
+| `OPENZAAK_CLIENT_SECRET` | OAuth client secret for OpenZaak |
+
+### Corsa ZaakDMS
+
+| Variable | Description |
+|---|---|
+| `ZAAKDMS_URL` | SOAP endpoint URL of the Corsa ZaakDMS service |
+| `ZAAKDMS_SENDER_APPLICATION` | Sender application identifier |
+| `ZAAKDMS_SENDER_ADMINISTRATIVE` | Sender administrative unit |
+| `ZAAKDMS_SENDER_ORGANISATION` | Sender organisation name |
+| `ZAAKDMS_SENDER_USER` | Sender username (default: `Systeemgebruiker`) |
+| `FIXED_CORSA_ZAAKTYPE_CODE` | Fixed zaaktype code used when creating zaken in Corsa (default: `226`) |
+
+### Batching
+
+| Variable | Default | Description |
+|---|---|---|
+| `NOTIFICATION_BATCH_TIMEOUT` | `60` | Seconds to wait before processing a batch |
+| `NOTIFICATION_BATCH_MAX_SIZE` | `100` | Maximum notifications in a single batch |
+| `NOTIFICATION_USE_QUEUE` | `true` | Whether to process via queue |
+| `NOTIFICATION_QUEUE` | `default` | Queue name for batch processing jobs |
 
 ## Installation
 
 ### Requirements (Local or Docker)
 
-- PHP 8.2+, Composer, Node.js/NPM, MySQL, Redis (for local setup)
+- PHP 8.4+, Composer, Node.js/NPM, PostgreSQL, Redis (for local setup)
 - Or: [Laravel Sail](https://laravel.com/docs/sail) with Docker for easy environment setup
 
 ### Quick Start (Docker using Sail)

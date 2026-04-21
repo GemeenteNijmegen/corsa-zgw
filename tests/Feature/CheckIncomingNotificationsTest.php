@@ -28,7 +28,7 @@ test('it skips processing when kanaal is not zaken', function () {
 
     $openzaakSpy->shouldNotHaveReceived('get');
     $batchingServiceSpy->shouldNotHaveReceived('getOrCreateBatch');
-    
+
     expect(Notification::count())->toBe(0);
 });
 
@@ -79,7 +79,7 @@ test('it processes when kanaal is zaken', function () {
     $batchingServiceMock->shouldReceive('addNotificationToBatch')
         ->once()
         ->withArgs(function ($notification, $batch) use ($fakeBatch) {
-            return $notification instanceof Notification 
+            return $notification instanceof Notification
                 && $batch->id === $fakeBatch->id;
         });
 
@@ -87,7 +87,7 @@ test('it processes when kanaal is zaken', function () {
     $job->handle($openzaakMock, $batchingServiceMock);
 
     expect(Notification::count())->toBe(1);
-    
+
     $notification = Notification::first();
     expect($notification->zaak_identificatie)->toBe('ZAAK-2024-001')
         ->and($notification->processed)->toBeFalse();

@@ -1,3 +1,57 @@
+## Project Context
+
+This application is an integration bridge between **OpenNotificaties** (a Dutch government notification system complying with the ZGW standard) and **Corsa ZaakDMS** (a document management system by Woweb). It receives webhook notifications about cases (zaken), batches them per case using a cache-based timer, and processes them in the correct order to keep Corsa up to date.
+
+### Domain Terminology
+
+| Term | Meaning |
+|---|---|
+| **ZGW** | Zaakgericht Werken — the Dutch government standard for case-oriented data exchange |
+| **OpenNotificaties** | The notification service that pushes events when ZGW objects change |
+| **OpenZaak** | The ZGW-compliant case API (source of zaak, status, document data) |
+| **Corsa ZaakDMS** | The document management system that is the sync target (SOAP-based, via `woweb/laravel-zaakdms`) |
+| **Zaak** | A case or dossier in the ZGW system |
+| **Zaaktype** | The type/category of a zaak |
+| **Zaakinformatieobject** | A document linked to a zaak |
+| **Batch** | A group of notifications for the same zaak that arrive within the timer window |
+
+### Critical Ordering Rule
+
+`create:zaak` must **always be the first job** in a `Bus::chain()`. All other notification types (status, document) can only be processed after the zaak exists in Corsa. This invariant is enforced in `BatchingService` and must be preserved in any changes to processing logic.
+
+### Key Files
+
+| File | Responsibility |
+|---|---|
+| `app/Services/BatchingService.php` | Timer logic, batch creation, job chain dispatch |
+| `app/Services/CorsaZaakdmsService.php` | All Corsa ZaakDMS SOAP calls |
+| `app/Jobs/ProcessBatch.php` | Locks a batch and builds the job chain |
+| `app/Jobs/ProcessNotification.php` | Routes a single notification to the correct handler |
+| `app/Jobs/CheckIncomingNotification.php` | Validates and batches an incoming notification |
+| `app/Jobs/TriggerBatchProcessing.php` | Dispatched by scheduler every minute |
+| `config/batching.php` | Batch timeout, max size, queue settings |
+| `app/ValueObjects/OpenNotification.php` | DTO for incoming webhook payload |
+| `app/ValueObjects/ZGW/Zaak.php` | DTO for a zaak fetched from OpenZaak (with expanded fields) |
+
+### Architecture Flow
+
+```
+POST /api/v1/notifications
+  → CheckIncomingNotification
+    → BatchingService (cache timer per zaak_identificatie)
+      → [timer expires, every minute]
+        → ProcessBatch → Bus::chain([ProcessNotification, ...])
+          → CorsaZaakdmsService (creeerZaak / actualiseerZaakstatus / voegZaakdocumentToe)
+```
+
+### Documentation
+
+See the `docs/` directory for detailed domain documentation:
+
+- `docs/notificaties.md` — notification types and ordering rationale
+- `docs/batching_system.md` — batching system components and flow
+- `docs/API-Call-mapping.md` — example notification payloads and Corsa API calls
+
 <laravel-boost-guidelines>
 === foundation rules ===
 
