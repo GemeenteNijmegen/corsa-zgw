@@ -99,6 +99,17 @@ class Batch extends Model
     }
 
     /**
+     * Check if batch contains a 'resultaat aangemaakt' notification
+     */
+    public function hasResultaatAangemaakt(): bool
+    {
+        return $this->notifications()
+            ->whereJsonContains('notification->actie', 'create')
+            ->whereJsonContains('notification->resource', 'resultaat')
+            ->exists();
+    }
+
+    /**
      * Get notifications sorted by type and creation date
      */
     public function getNotificationsSorted(): \Illuminate\Database\Eloquent\Collection
@@ -112,6 +123,11 @@ class Batch extends Model
                 $resource = $notification->notification['resource'] ?? '';
                 if ($actie === 'create' && $resource === 'zaak') {
                     return 0;
+                }
+
+                // Resultaat must always be last
+                if ($actie === 'create' && $resource === 'resultaat') {
+                    return 2;
                 }
 
                 // Other notifications can be processed in the order they arrived

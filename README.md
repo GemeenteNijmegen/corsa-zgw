@@ -4,11 +4,12 @@
 
 Corsa ZGW is an integration service that bridges [OpenNotificaties](https://open-notificaties.readthedocs.io/) (a Dutch government notification system) and Corsa ZaakDMS (a document management system). It receives case (zaak) notifications over an API, batches them per case, and processes them in the correct order to keep the DMS up to date.
 
-The application handles three types of notifications:
+The application handles four types of notifications:
 
 - **Zaak aangemaakt** (case created): always processed first to ensure the case exists in Corsa before any related data is added.
 - **Zaakstatus** (status update): updates the current status of an existing case in Corsa.
 - **Zaakinformatieobject** (document attached): downloads and uploads a document from OpenZaak to Corsa.
+- **Resultaat aangemaakt** (result registered): always processed last, closes the case in Corsa with the final outcome and end date.
 
 A cache-based timer groups all notifications for a single case that arrive within a configurable window. When the timer expires, notifications are processed as an ordered job chain via Laravel's `Bus::chain()`, guaranteeing that `create:zaak` always runs first.
 
@@ -26,14 +27,16 @@ POST /api/v1/notifications (Sanctum)
   └─ TriggerBatchProcessing (job)
        └─ ProcessBatch (job, per expired batch)
             └─ Bus::chain([
-                 ProcessNotification(create:zaak),   ← always first
-                 ProcessNotification(status),
-                 ProcessNotification(document), ...
+                 ProcessNotification(create:zaak),       ← always first
+                 ProcessNotification(create:status),
+                 ProcessNotification(create:zaakinformatieobject),
+                 ProcessNotification(create:resultaat),  ← always last
                ])
                  └─ CorsaZaakdmsService
                       ├─ creeerZaak()
                       ├─ actualiseerZaakstatus()
-                      └─ voegZaakdocumentToe()
+                      ├─ voegZaakdocumentToe()
+                      └─ updateZaak()
 ```
 
 ## API
@@ -46,13 +49,14 @@ Authorization: Bearer {sanctum-token}
 Content-Type: application/json
 ```
 
-Three notification types are accepted. See [docs/API-Call-mapping.md](docs/API-Call-mapping.md) for full payload examples.
+Three notification types on the `zaken` kanaal are accepted. See [docs/API-Call-mapping.md](docs/API-Call-mapping.md) for full payload examples.
 
-| `resource`              | Effect in Corsa                     |
-|-------------------------|-------------------------------------|
-| `zaak`                  | Creates a new zaak                  |
-| `status`                | Updates the zaak status             |
-| `zaakinformatieobject`  | Uploads a document to the zaak      |
+| `resource`              | Effect in Corsa                          | Order |
+|-------------------------|------------------------------------------|-------|
+| `zaak`                  | Creates a new zaak                       | First |
+| `status`                | Updates the zaak status                  | Middle |
+| `zaakinformatieobject`  | Uploads a document to the zaak           | Middle |
+| `resultaat`             | Closes the zaak with a final outcome     | Last |
 
 ## Technical Stack
 

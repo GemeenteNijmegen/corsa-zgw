@@ -39,6 +39,7 @@ class ProcessNotification implements ShouldQueue
                 'create:zaak' => $this->handleZaakAangemaakt($corsaZaakdmsService),
                 'create:status' => $this->handleZaakPartialUpdate($corsaZaakdmsService),
                 'create:zaakinformatieobject' => $this->handleDocumentAangemaakt($corsaZaakdmsService),
+                'create:resultaat' => $this->handleResultaatAangemaakt($corsaZaakdmsService),
                 default => $this->handleUnknownAction(),
             };
 
@@ -96,6 +97,19 @@ class ProcessNotification implements ShouldQueue
         ]);
 
         $corsaZaakdmsService->processDocumentAangemaakt($this->notification);
+    }
+
+    /**
+     * Handle resultaat aangemaakt (result created) notification
+     */
+    private function handleResultaatAangemaakt(CorsaZaakdmsService $corsaZaakdmsService): void
+    {
+        Log::debug('Handling resultaat aangemaakt', [
+            'notification_id' => $this->notification->id,
+            'zaak_identificatie' => $this->notification->zaak_identificatie,
+        ]);
+
+        $corsaZaakdmsService->processResultaatAangemaakt($this->notification);
     }
 
     /**
