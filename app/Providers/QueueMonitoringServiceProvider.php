@@ -20,8 +20,9 @@ class QueueMonitoringServiceProvider extends ServiceProvider
             Http::post($url, ['text' => "❌ *Failed Job*: `{$event->job->resolveName()}`\n```{$event->exception->getMessage()}```"]);
         });
 
-        Event::listen(WorkerStopping::class, function (WorkerStopping $event) use ($url) {
-            Http::post($url, ['text' => "⚠️ *Queue Worker Stopped* (exit code: {$event->status})"]);
-        });
+        // This can happen at any time, we have the worker container healthcheck to keep the container actual.
+        // Event::listen(WorkerStopping::class, function (WorkerStopping $event) use ($url) {
+        //     Http::post($url, ['text' => "⚠️ *Queue Worker Stopped* (exit code: {$event->status})"]);
+        // });
     }
 }
