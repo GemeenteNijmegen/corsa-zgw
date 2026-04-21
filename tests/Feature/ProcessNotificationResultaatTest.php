@@ -56,7 +56,8 @@ test('create:resultaat marks notification as processed on success', function () 
     $job = new HandleNotification($notification);
     $job->handle($serviceMock);
 
-    expect($notification->fresh()->processed)->toBeTrue();
+    expect($notification->fresh()->processed)->toBeTrue()
+        ->and($notification->fresh()->processed_at)->not->toBeNull();
 });
 
 test('create:resultaat rethrows exception from service', function () {
