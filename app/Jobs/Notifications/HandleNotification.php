@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Jobs;
+namespace App\Jobs\Notifications;
 
 use App\Models\Notification;
 use App\Services\CorsaZaakdmsService;
@@ -9,11 +9,33 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 
-class ProcessNotification implements ShouldQueue
+class HandleNotification implements ShouldQueue
 {
     use Batchable, Queueable;
 
     public function __construct(private readonly Notification $notification) {}
+
+    public function displayName(): string
+    {
+        $actie = $this->notification->notification['actie'] ?? 'unknown';
+        $resource = $this->notification->notification['resource'] ?? 'unknown';
+
+        return "Handle {$actie}:{$resource}";
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function tags(): array
+    {
+        $actie = $this->notification->notification['actie'] ?? 'unknown';
+        $resource = $this->notification->notification['resource'] ?? 'unknown';
+
+        return [
+            "zaak:{$this->notification->zaak_identificatie}",
+            "action:{$actie}:{$resource}",
+        ];
+    }
 
     /**
      * Execute the job.
@@ -39,6 +61,7 @@ class ProcessNotification implements ShouldQueue
                 'create:zaak' => $this->handleZaakAangemaakt($corsaZaakdmsService),
                 'create:status' => $this->handleZaakPartialUpdate($corsaZaakdmsService),
                 'create:zaakinformatieobject' => $this->handleDocumentAangemaakt($corsaZaakdmsService),
+                'create:resultaat' => $this->handleResultaatAangemaakt($corsaZaakdmsService),
                 default => $this->handleUnknownAction(),
             };
 
@@ -96,6 +119,19 @@ class ProcessNotification implements ShouldQueue
         ]);
 
         $corsaZaakdmsService->processDocumentAangemaakt($this->notification);
+    }
+
+    /**
+     * Handle resultaat created notification
+     */
+    private function handleResultaatAangemaakt(CorsaZaakdmsService $corsaZaakdmsService): void
+    {
+        Log::debug('Handling resultaat aangemaakt', [
+            'notification_id' => $this->notification->id,
+            'zaak_identificatie' => $this->notification->zaak_identificatie,
+        ]);
+
+        $corsaZaakdmsService->processResultaatAangemaakt($this->notification);
     }
 
     /**

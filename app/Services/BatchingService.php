@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Jobs\ProcessNotification;
+use App\Jobs\Notifications\HandleNotification;
 use App\Models\Batch;
 use App\Models\Notification;
 use Illuminate\Database\Eloquent\Model;
@@ -155,13 +155,13 @@ class BatchingService
 
         if ($createNotification) {
             /** @var \App\Models\Notification $createNotification */
-            $jobs[] = new ProcessNotification($createNotification);
+            $jobs[] = new HandleNotification($createNotification);
         }
 
         // Add other notifications to be processed in parallel after create
         foreach ($otherNotifications as $notification) {
             /** @var \App\Models\Notification $notification */
-            $jobs[] = new ProcessNotification($notification);
+            $jobs[] = new HandleNotification($notification);
         }
 
         // Dispatch the job chain
@@ -189,7 +189,7 @@ class BatchingService
         $jobs = [];
         foreach ($notifications as $notification) {
             /** @var \App\Models\Notification $notification */
-            $jobs[] = new ProcessNotification($notification);
+            $jobs[] = new HandleNotification($notification);
         }
 
         // Dispatch all jobs in parallel

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Jobs;
+namespace App\Jobs\Sync;
 
 use App\Models\Catalogus;
 use App\Models\ZaaktypeMapping;
@@ -9,15 +9,28 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Woweb\Openzaak\Openzaak;
 
-class SyncCatalogusJob implements ShouldQueue
+class SyncCatalogus implements ShouldQueue
 {
     use Queueable;
 
     public function __construct(private readonly Catalogus $catalogus) {}
 
+    public function displayName(): string
+    {
+        return "Sync Catalogus {$this->catalogus->url}";
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function tags(): array
+    {
+        return ["catalogus:{$this->catalogus->id}"];
+    }
+
     public function handle(Openzaak $openzaak): void
     {
-        Log::info('SyncCatalogusJob started', [
+        Log::info('SyncCatalogus started', [
             'catalogus_id' => $this->catalogus->id,
             'catalogus_url' => $this->catalogus->url,
         ]);
@@ -55,7 +68,7 @@ class SyncCatalogusJob implements ShouldQueue
 
         $this->catalogus->update(['last_synced_at' => now()]);
 
-        Log::info('SyncCatalogusJob completed', [
+        Log::info('SyncCatalogus completed', [
             'catalogus_id' => $this->catalogus->id,
             'synced_count' => $synced,
         ]);

@@ -250,6 +250,51 @@ class CorsaZaakdmsService
         }
     }
 
+    public function processResultaatAangemaakt(Notification $notification): void
+    {
+        $resultaatUrl = $notification->notification['resourceUrl'] ?? null;
+        if (! $resultaatUrl) {
+            throw new RuntimeException('Missing resultaat url for resultaat notification');
+        }
+
+        Log::info('Corsa resultaat update start', [
+            'notification_id' => $notification->id,
+            'resultaat_url' => $resultaatUrl,
+        ]);
+
+        $resultaatData = $this->openzaak->get($resultaatUrl)->toArray();
+        $resultaattypeUrl = $resultaatData['resultaattype'] ?? null;
+        $resultaattypeData = $resultaattypeUrl ? $this->openzaak->get($resultaattypeUrl)->toArray() : [];
+
+        $zaakUrl = $resultaatData['zaak'] ?? $this->resolveZaakUrlFromNotification($notification);
+        $zaak = $this->fetchZaak($zaakUrl);
+
+        if (! $this->checkZaakExistenceInCorsa($zaak->identificatie, $notification)) {
+            Log::warning('Missing zaak in Corsa for resultaat update', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $zaak->identificatie,
+            ]);
+            throw new RuntimeException('Missing zaak in Corsa for resultaat update');
+        }
+
+        $dateFormat = config('zaakdms.date_format', 'Ymd');
+        $einddatum = $zaak->einddatum
+            ? Carbon::parse($zaak->einddatum)->format($dateFormat)
+            : Carbon::today()->format($dateFormat);
+
+        $reference = $this->zaakdms->updateZaak([
+            'identificatie' => $zaak->identificatie,
+            'resultaat' => $resultaattypeData['omschrijving'] ?? null,
+            'einddatum' => $einddatum,
+        ]);
+
+        Log::info('Corsa resultaat update done', [
+            'notification_id' => $notification->id,
+            'zaak_identificatie' => $zaak->identificatie,
+            'corsa_reference' => $reference,
+        ]);
+    }
+
     private function fetchZaak(string $zaakUrl): Zaak
     {
         $expandedUrl = $this->addExpandToUrl($zaakUrl, [

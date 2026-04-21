@@ -1,6 +1,6 @@
 <?php
 
-use App\Jobs\CheckIncomingNotification;
+use App\Jobs\Notifications\IngestNotification;
 use App\Models\Batch;
 use App\Models\Notification;
 use App\Models\ZaaktypeMapping;
@@ -48,7 +48,7 @@ test('it ignores notification when zaaktype has no active mapping', function () 
 
     $batchingServiceSpy = Mockery::spy(BatchingService::class);
 
-    $job = new CheckIncomingNotification($openNotification);
+    $job = new IngestNotification($openNotification);
     $job->handle($openzaakMock, $batchingServiceSpy);
 
     $batchingServiceSpy->shouldNotHaveReceived('getOrCreateBatch');
@@ -86,7 +86,7 @@ test('it ignores notification when zaaktype mapping exists but is inactive', fun
 
     $batchingServiceSpy = Mockery::spy(BatchingService::class);
 
-    $job = new CheckIncomingNotification($openNotification);
+    $job = new IngestNotification($openNotification);
     $job->handle($openzaakMock, $batchingServiceSpy);
 
     $batchingServiceSpy->shouldNotHaveReceived('getOrCreateBatch');
@@ -126,7 +126,7 @@ test('it processes notification when zaaktype has an active mapping', function (
 
     $batchingServiceMock->shouldReceive('addNotificationToBatch')->once();
 
-    $job = new CheckIncomingNotification($openNotification);
+    $job = new IngestNotification($openNotification);
     $job->handle($openzaakMock, $batchingServiceMock);
 
     expect(Notification::count())->toBe(1);

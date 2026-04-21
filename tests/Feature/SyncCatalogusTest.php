@@ -1,6 +1,6 @@
 <?php
 
-use App\Jobs\SyncCatalogusJob;
+use App\Jobs\Sync\SyncCatalogus;
 use App\Models\Catalogus;
 use App\Models\ZaaktypeMapping;
 use Woweb\Openzaak\Openzaak;
@@ -31,7 +31,7 @@ test('it upserts zaaktype mappings from a response', function () {
             ],
         ]));
 
-    $job = new SyncCatalogusJob($catalogus);
+    $job = new SyncCatalogus($catalogus);
     $job->handle($openzaakMock);
 
     expect(ZaaktypeMapping::count())->toBe(1);
@@ -75,7 +75,7 @@ test('it follows pagination next links', function () {
             'results' => [['url' => 'https://openzaak.example.com/catalogi/api/v1/zaaktypen/bbb-222', 'identificatie' => 'ZT-002', 'omschrijving' => 'Type 2']],
         ]));
 
-    $job = new SyncCatalogusJob($catalogus);
+    $job = new SyncCatalogus($catalogus);
     $job->handle($openzaakMock);
 
     expect(ZaaktypeMapping::count())->toBe(2);
@@ -107,7 +107,7 @@ test('it preserves existing corsa_zaaktype_code and is_active on re-sync', funct
             ],
         ]));
 
-    $job = new SyncCatalogusJob($catalogus);
+    $job = new SyncCatalogus($catalogus);
     $job->handle($openzaakMock);
 
     $mapping = ZaaktypeMapping::where('zaaktype_url', $zaaktypeUrl)->first();

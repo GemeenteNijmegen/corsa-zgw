@@ -1,12 +1,12 @@
 <?php
 
-use App\Jobs\SyncAllCatalogiJob;
+use App\Jobs\Sync\SyncAllCatalogi;
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::command('telescope:prune')->weekly();
 
 // Process notification batches every minute to catch expired timers
-Schedule::command('notifications:process-batches')
+Schedule::command('notifications:flush-expired-batches')
     ->everyMinute()
     ->withoutOverlapping()
     ->onFailure(function () {
@@ -14,6 +14,6 @@ Schedule::command('notifications:process-batches')
     });
 
 // Sync zaaktype mappings from ZGW catalogi daily
-Schedule::job(SyncAllCatalogiJob::class)
+Schedule::job(SyncAllCatalogi::class)
     ->daily()
     ->withoutOverlapping();

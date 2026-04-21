@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\NotificationRequest;
-use App\Jobs\CheckIncomingNotification;
+use App\Jobs\Notifications\IngestNotification;
 use App\ValueObjects\OpenNotification;
 
 class Notifications extends Controller
@@ -13,6 +13,6 @@ class Notifications extends Controller
     {
         $validated = $request->validated();
 
-        CheckIncomingNotification::dispatch(opennotification: new OpenNotification(...$validated));
+        IngestNotification::dispatch(opennotification: new OpenNotification(...$validated));
     }
 }

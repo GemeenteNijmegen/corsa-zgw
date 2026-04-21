@@ -2,7 +2,7 @@
 
 namespace App\Filament\Resources\ZaaktypeMappings\Tables;
 
-use App\Jobs\SyncAllCatalogiJob;
+use App\Jobs\Sync\SyncAllCatalogi;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\EditAction;
@@ -59,7 +59,7 @@ class ZaaktypeMappingsTable
                     ->label('Sync alle catalogi')
                     ->icon('heroicon-o-arrow-path')
                     ->action(function () {
-                        SyncAllCatalogiJob::dispatch();
+                        SyncAllCatalogi::dispatch();
 
                         Notification::make()
                             ->title('Sync gestart')

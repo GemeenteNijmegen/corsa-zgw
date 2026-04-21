@@ -2,7 +2,7 @@
 
 namespace App\Filament\Resources\Catalogi\Tables;
 
-use App\Jobs\SyncCatalogusJob;
+use App\Jobs\Sync\SyncCatalogus;
 use App\Models\Catalogus;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -49,7 +49,7 @@ class CatalogiTable
                     ->label('Sync')
                     ->icon('heroicon-o-arrow-path')
                     ->action(function (Catalogus $record) {
-                        SyncCatalogusJob::dispatch($record);
+                        SyncCatalogus::dispatch($record);
 
                         Notification::make()
                             ->title('Sync gestart')
