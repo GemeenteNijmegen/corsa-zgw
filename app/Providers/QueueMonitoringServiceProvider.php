@@ -12,19 +12,16 @@ class QueueMonitoringServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
-        Event::listen(JobFailed::class, function (JobFailed $event) {
-            $this->notify("❌ *Failed Job*: `{$event->job->resolveName()}`\n```{$event->exception->getMessage()}```");
-        });
-
-        Event::listen(WorkerStopping::class, function (WorkerStopping $event) {
-            $this->notify("⚠️ *Queue Worker Stopped* (exit code: {$event->status})");
-        });
-    }
-
-    private function notify(string $message): void
-    {
-        if ($url = config('services.slack.webhook_url')) {
-            Http::post($url, ['text' => $message]);
+        if (! $url = config('services.slack.webhook_url')) {
+            return;
         }
+
+        Event::listen(JobFailed::class, function (JobFailed $event) use ($url) {
+            Http::post($url, ['text' => "❌ *Failed Job*: `{$event->job->resolveName()}`\n```{$event->exception->getMessage()}```"]);
+        });
+
+        Event::listen(WorkerStopping::class, function (WorkerStopping $event) use ($url) {
+            Http::post($url, ['text' => "⚠️ *Queue Worker Stopped* (exit code: {$event->status})"]);
+        });
     }
 }
