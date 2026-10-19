@@ -387,7 +387,7 @@ class CorsaZaakdmsService
         }
 
         $betrokkeneType = $zaak->initiator->betrokkeneType;
-        $identificatie = $zaak->initiator->betrokkeneIdentificatie ?? [];
+        $identificatie = $zaak->initiator->betrokkeneIdentificatie;
 
         Log::debug('Mapping initiator', [
             'zaak_identificatie' => $zaak->identificatie,
