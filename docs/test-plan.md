@@ -7,7 +7,28 @@ This document tracks the automated test coverage plan for corsa-zgw. Tests are g
 | Area | Tests written | Branch / PR |
 |---|---|---|
 | `BatchingService` | ✅ 26 tests | `test/batching` |
-| Everything else | ❌ | — |
+| `CorsaZaakdmsService` (create, status, document) | ✅ `tests/Feature/CorsaZaakdmsServiceTest.php` | `test/characterization-coverage` |
+| `HandleNotification` routing | ✅ `tests/Feature/HandleNotificationRoutingTest.php` | `test/characterization-coverage` |
+| `Api/Notifications` controller and `NotificationRequest` | ✅ `tests/Feature/NotificationsEndpointTest.php` | `test/characterization-coverage` |
+| `FlushExpiredBatchesCommand`, `FlushExpiredBatches`, `DispatchBatch` | ✅ `tests/Feature/FlushExpiredBatchesTest.php` | `test/characterization-coverage` |
+| `Zaak` and `Rol` value objects | ✅ `tests/Unit/ZaakTest.php` | `test/characterization-coverage` |
+| Admin panel access, `UserResource`, token creation | ✅ `tests/Feature/AdminAccessTest.php` | `test/characterization-coverage` |
+| `Batch` and `Notification` models, `ZaakEigenschap`, routes | ❌ | not yet |
+
+Line coverage after `test/characterization-coverage`: 92.5% in total, 95.6% for `CorsaZaakdmsService` (`pest --coverage` with pcov).
+
+### Characterization tests and known bugs
+
+The tests added in `test/characterization-coverage` record the current behaviour, including behaviour that is wrong. A test whose name starts with `known bug:` asserts the faulty behaviour on purpose. The change that fixes the bug should flip that test to the correct behaviour.
+
+- `known bug: Zaak cannot be constructed when the expanded rollen contain no initiator`
+- `known bug: processZaakAangemaakt fails with a TypeError when the zaak has no initiator role`
+- `known bug: processZaakAangemaakt fails when the natural person initiator has no geslachtsnaam field`
+- `known bug: an unsupported action/resource combination is only logged and marked as processed`
+
+Tests whose name contains `currently` record behaviour that may be intended but deserves a decision, such as the endpoint accepting `update` and `delete` notifications that are never handled.
+
+The new tests fake the ZGW APIs with `Http::fake()`, so they describe the outgoing requests and their effect rather than calls on the ZGW client library.
 
 ---
 
