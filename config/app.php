@@ -125,4 +125,6 @@ return [
 
     'fixed_corsa_zaaktype_code' => env('FIXED_CORSA_ZAAKTYPE_CODE', '226'),
 
+    'home_redirect_url' => env('HOME_REDIRECT_URL', 'https://github.com/GemeenteNijmegen/corsa-zgw'),
+
 ];
