@@ -1,0 +1,55 @@
+# Version control and CI
+.git
+.gitattributes
+.gitignore
+.github
+.githooks
+
+# Dependencies are installed inside the image
+vendor
+node_modules
+composer.phar
+
+# Local development and tooling
+.claude
+.mcp.json
+CLAUDE.md
+boost.json
+docker
+docker-compose.yml
+docs
+.editorconfig
+*.idea
+*.vscode
+.fleet
+.zed
+
+# Tests and static analysis (not part of production builds)
+tests
+phpunit.xml
+phpunit.xml.dist
+.phpunit.cache
+.phpunit.result.cache
+phpstan.neon
+rector.php
+
+# Environment files
+.env
+.env.*
+auth.json
+
+# Local build output and runtime files
+public/build
+public/hot
+public/storage
+storage/pail
+cert
+
+# Editor and OS junk
+*.swp
+*.swo
+*.bak
+*.tmp
+*.log
+.DS_Store
+Thumbs.db
