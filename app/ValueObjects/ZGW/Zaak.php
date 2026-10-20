@@ -18,8 +18,6 @@ class Zaak implements Arrayable
 
     public readonly ?array $otherParams;
 
-    public readonly ?string $data_object_url;
-
     /*  @var CatalogiEigenschap[]|[] $eigenschappen */
     public readonly array $eigenschappen;
 
@@ -59,10 +57,6 @@ class Zaak implements Arrayable
 
         $this->status_name = Arr::has($this->_expand, 'status._expand.statustype.omschrijving')
             ? $this->_expand['status']['_expand']['statustype']['omschrijving']
-            : null;
-
-        $this->data_object_url = Arr::has($this->_expand, 'zaakobjecten.0.object') && str_contains(Arr::get($this->_expand, 'zaakobjecten.0.object'), config('openzaak.objectsapi.url'))
-            ? Arr::get($this->_expand, 'zaakobjecten.0.object')
             : null;
 
         $this->eigenschappen = Arr::has($this->_expand, 'eigenschappen')

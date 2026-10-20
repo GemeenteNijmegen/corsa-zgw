@@ -3,13 +3,10 @@
 namespace App\Providers;
 
 use App\Filament\Resources\Users\Pages\EditUser;
-use App\Jobs\Notifications\IngestNotification;
-use App\Services\BatchingService;
 use Filament\Support\Facades\FilamentView;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\ServiceProvider;
-use Woweb\Openzaak\Openzaak;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -30,6 +27,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        $this->app->bindMethod([IngestNotification::class, 'handle'], fn ($job) => $job->handle(openzaak: app(Openzaak::class), batchingService: app(BatchingService::class)));
+        //
     }
 }

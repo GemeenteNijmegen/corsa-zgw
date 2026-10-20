@@ -3,41 +3,44 @@
 use App\Jobs\Sync\SyncAllCatalogi;
 use App\Jobs\Sync\SyncCatalogus;
 use App\Models\Catalogus;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
-use Woweb\Openzaak\Api\CatalogiApi;
-use Woweb\Openzaak\Api\Endpoints\Catalogi\Catalogussen;
-use Woweb\Openzaak\Openzaak;
 
 uses(Illuminate\Foundation\Testing\RefreshDatabase::class);
 
-function mockOpenzaakWithCatalogi(array $catalogiData): Openzaak
+const CATALOGUSSEN_URL = 'https://openzaak.example.com/catalogi/api/v1/catalogussen';
+
+beforeEach(fn () => Http::preventStrayRequests());
+
+/**
+ * Fake the catalogussen list endpoint with a single page of results.
+ */
+function fakeCatalogussen(array $catalogiData): void
 {
-    $catalogussenMock = Mockery::mock(Catalogussen::class);
-    $catalogussenMock->shouldReceive('getAll')
-        ->once()
-        ->andReturn(collect($catalogiData));
+    Http::fake([
+        CATALOGUSSEN_URL.'*' => Http::response([
+            'count' => count($catalogiData),
+            'next' => null,
+            'previous' => null,
+            'results' => $catalogiData,
+        ]),
+    ]);
+}
 
-    $catalogiApiMock = Mockery::mock(CatalogiApi::class);
-    $catalogiApiMock->shouldReceive('catalogussen')
-        ->once()
-        ->andReturn($catalogussenMock);
-
-    $openzaakMock = Mockery::mock(Openzaak::class);
-    $openzaakMock->shouldReceive('catalogi')
-        ->once()
-        ->andReturn($catalogiApiMock);
-
-    return $openzaakMock;
+function runSyncAllCatalogi(): void
+{
+    app()->call([new SyncAllCatalogi, 'handle']);
 }
 
 test('it creates new catalogi from ZGW that do not exist yet', function () {
     Queue::fake();
 
-    $openzaakMock = mockOpenzaakWithCatalogi([
+    fakeCatalogussen([
         ['url' => 'https://openzaak.example.com/catalogi/api/v1/catalogussen/aaa', 'naam' => 'Catalogus A'],
     ]);
 
-    (new SyncAllCatalogi)->handle($openzaakMock);
+    runSyncAllCatalogi();
 
     expect(Catalogus::count())->toBe(1);
 
@@ -45,6 +48,10 @@ test('it creates new catalogi from ZGW that do not exist yet', function () {
     expect($catalogus->url)->toBe('https://openzaak.example.com/catalogi/api/v1/catalogussen/aaa')
         ->and($catalogus->omschrijving)->toBe('Catalogus A')
         ->and($catalogus->is_active)->toBeFalse();
+
+    Http::assertSentCount(1);
+    Http::assertSent(fn (Request $request) => $request->method() === 'GET'
+        && str_starts_with($request->url(), CATALOGUSSEN_URL));
 });
 
 test('it does not duplicate catalogi that already exist', function () {
@@ -56,11 +63,11 @@ test('it does not duplicate catalogi that already exist', function () {
         'is_active' => false,
     ]);
 
-    $openzaakMock = mockOpenzaakWithCatalogi([
+    fakeCatalogussen([
         ['url' => 'https://openzaak.example.com/catalogi/api/v1/catalogussen/aaa', 'naam' => 'Catalogus A'],
     ]);
 
-    (new SyncAllCatalogi)->handle($openzaakMock);
+    runSyncAllCatalogi();
 
     expect(Catalogus::count())->toBe(1);
 });
@@ -73,11 +80,11 @@ test('it deactivates active catalogi that no longer exist in ZGW', function () {
         'is_active' => true,
     ]);
 
-    $openzaakMock = mockOpenzaakWithCatalogi([
+    fakeCatalogussen([
         ['url' => 'https://openzaak.example.com/catalogi/api/v1/catalogussen/aaa', 'naam' => 'Catalogus A'],
     ]);
 
-    (new SyncAllCatalogi)->handle($openzaakMock);
+    runSyncAllCatalogi();
 
     expect($gone->fresh()->is_active)->toBeFalse();
 });
@@ -89,9 +96,9 @@ test('it does not touch inactive catalogi that are gone from ZGW', function () {
         'url' => 'https://openzaak.example.com/catalogi/api/v1/catalogussen/gone',
     ]);
 
-    $openzaakMock = mockOpenzaakWithCatalogi([]);
+    fakeCatalogussen([]);
 
-    (new SyncAllCatalogi)->handle($openzaakMock);
+    runSyncAllCatalogi();
 
     // Still exists and still inactive — no change
     expect($inactive->fresh()->is_active)->toBeFalse();
@@ -105,11 +112,48 @@ test('it dispatches SyncCatalogus for each active catalogus', function () {
         'is_active' => true,
     ]);
 
-    $openzaakMock = mockOpenzaakWithCatalogi([
+    fakeCatalogussen([
         ['url' => 'https://openzaak.example.com/catalogi/api/v1/catalogussen/active', 'naam' => 'Active'],
     ]);
 
-    (new SyncAllCatalogi)->handle($openzaakMock);
+    runSyncAllCatalogi();
 
     Queue::assertPushed(SyncCatalogus::class, fn ($job) => true);
+});
+
+test('it reads catalogi from every page and keeps an active catalogus on a later page active', function () {
+    Queue::fake();
+
+    $onSecondPage = Catalogus::factory()->create([
+        'url' => 'https://openzaak.example.com/catalogi/api/v1/catalogussen/bbb',
+        'is_active' => true,
+    ]);
+
+    $page2Url = CATALOGUSSEN_URL.'?page=2';
+
+    Http::fake(function (Request $request) use ($page2Url) {
+        if ($request->url() === $page2Url) {
+            return Http::response([
+                'count' => 2,
+                'next' => null,
+                'previous' => CATALOGUSSEN_URL,
+                'results' => [['url' => 'https://openzaak.example.com/catalogi/api/v1/catalogussen/bbb', 'naam' => 'Catalogus B']],
+            ]);
+        }
+
+        return Http::response([
+            'count' => 2,
+            'next' => $page2Url,
+            'previous' => null,
+            'results' => [['url' => 'https://openzaak.example.com/catalogi/api/v1/catalogussen/aaa', 'naam' => 'Catalogus A']],
+        ]);
+    });
+
+    runSyncAllCatalogi();
+
+    expect(Catalogus::count())->toBe(2)
+        ->and($onSecondPage->fresh()->is_active)->toBeTrue();
+
+    // The list is fetched once, although the job walks it twice.
+    Http::assertSentCount(2);
 });

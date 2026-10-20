@@ -9,15 +9,17 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Woweb\Zaakdms\Zaakdms;
+use Woweb\Zgw\Exceptions\ApiRequestException;
+use Woweb\Zgw\Exceptions\DisallowedHostException;
 
 /*
  * Characterization tests for CorsaZaakdmsService.
  *
  * The ZGW APIs are faked at the HTTP level, so these tests describe what the
  * application requests and what it sends on to the document management system,
- * independent of the ZGW client library in between. Only the client credentials
- * in beforeEach() are specific to the current library. The document management
- * system client is mocked at its public method boundary.
+ * independent of the ZGW client library in between. The ZGW host and client
+ * credentials come from the test environment in phpunit.xml. The document
+ * management system client is mocked at its public method boundary.
  */
 
 uses(Illuminate\Foundation\Testing\RefreshDatabase::class);
@@ -35,12 +37,6 @@ beforeEach(function () {
     Log::spy();
     Storage::fake('local');
     Http::preventStrayRequests();
-
-    // The ZGW client signs its requests with these credentials.
-    config([
-        'openzaak.client_id' => 'test-client',
-        'openzaak.client_secret' => 'Test-secret-1234*!',
-    ]);
 
     $this->zaakdms = $this->mock(Zaakdms::class);
 });
@@ -710,4 +706,33 @@ test('processDocumentAangemaakt uses defaults for a document without type, autho
         ->and($options['titel'])->toBe('Aanvraagformulier.pdf');
 
     Http::assertNotSent(fn (Request $request) => $request->url() === ZGW_IOT_URL);
+});
+
+test('processDocumentAangemaakt throws and uploads nothing when the document content cannot be downloaded', function () {
+    // Registered first, so this stub wins over the download stub in fakeDocumentApis().
+    Http::fake([
+        ZGW_EIO_URL.'/download' => Http::response('<html>Internal Server Error</html>', 500),
+    ]);
+    fakeDocumentApis(zgwDocument());
+
+    $this->zaakdms->shouldReceive('geefZaakDetails')->andReturn(corsaZaakDetails());
+    $this->zaakdms->shouldNotReceive('voegZaakdocumentToe');
+
+    expect(fn () => corsaService()->processDocumentAangemaakt(makeServiceNotification('zaakinformatieobject', ZGW_ZIO_URL)))
+        ->toThrow(ApiRequestException::class);
+
+    expect(Storage::disk('local')->allFiles())->toBe([]);
+});
+
+test('processDocumentAangemaakt sends no request to an inhoud url outside the configured ZGW hosts', function () {
+    fakeDocumentApis(zgwDocument(['inhoud' => 'https://elsewhere.example.com/download/00000000-0000-0000-0000-000000000501']));
+
+    $this->zaakdms->shouldReceive('geefZaakDetails')->andReturn(corsaZaakDetails());
+    $this->zaakdms->shouldNotReceive('voegZaakdocumentToe');
+
+    expect(fn () => corsaService()->processDocumentAangemaakt(makeServiceNotification('zaakinformatieobject', ZGW_ZIO_URL)))
+        ->toThrow(DisallowedHostException::class);
+
+    Http::assertNotSent(fn (Request $request) => str_starts_with($request->url(), 'https://elsewhere.example.com'));
+    expect(Storage::disk('local')->allFiles())->toBe([]);
 });

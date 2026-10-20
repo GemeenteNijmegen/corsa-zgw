@@ -5,11 +5,14 @@ use App\Models\Batch;
 use App\Models\Notification;
 use App\Models\ZaaktypeMapping;
 use App\Services\BatchingService;
+use App\Services\Zgw\ZgwReader;
 use App\ValueObjects\OpenNotification;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Woweb\Openzaak\Openzaak;
 
 uses(Illuminate\Foundation\Testing\RefreshDatabase::class);
+
+beforeEach(fn () => Http::preventStrayRequests());
 
 function makeZaakNotification(string $zaaktypeUrl = 'https://openzaak.example.com/catalogi/api/v1/zaaktypen/aaa-111'): array
 {
@@ -29,6 +32,13 @@ function makeZaakNotification(string $zaaktypeUrl = 'https://openzaak.example.co
     ];
 }
 
+function fakeZaakResponse(array $zaak): void
+{
+    Http::fake([
+        'https://openzaak.example.com/zaken/api/v1/zaken/123' => Http::response($zaak),
+    ]);
+}
+
 test('it ignores notification when zaaktype has no active mapping', function () {
     Log::spy();
 
@@ -41,16 +51,14 @@ test('it ignores notification when zaaktype has no active mapping', function () 
         aanmaakdatum: '2024-01-01T10:00:00Z',
     );
 
-    $openzaakMock = Mockery::mock(Openzaak::class);
-    $openzaakMock->shouldReceive('get')
-        ->once()
-        ->andReturn(collect(makeZaakNotification()));
+    fakeZaakResponse(makeZaakNotification());
 
     $batchingServiceSpy = Mockery::spy(BatchingService::class);
 
     $job = new IngestNotification($openNotification);
-    $job->handle($openzaakMock, $batchingServiceSpy);
+    $job->handle(app(ZgwReader::class), $batchingServiceSpy);
 
+    Http::assertSentCount(1);
     $batchingServiceSpy->shouldNotHaveReceived('getOrCreateBatch');
     expect(Notification::count())->toBe(0);
 
@@ -79,16 +87,14 @@ test('it ignores notification when zaaktype mapping exists but is inactive', fun
         aanmaakdatum: '2024-01-01T10:00:00Z',
     );
 
-    $openzaakMock = Mockery::mock(Openzaak::class);
-    $openzaakMock->shouldReceive('get')
-        ->once()
-        ->andReturn(collect(makeZaakNotification($zaaktypeUrl)));
+    fakeZaakResponse(makeZaakNotification($zaaktypeUrl));
 
     $batchingServiceSpy = Mockery::spy(BatchingService::class);
 
     $job = new IngestNotification($openNotification);
-    $job->handle($openzaakMock, $batchingServiceSpy);
+    $job->handle(app(ZgwReader::class), $batchingServiceSpy);
 
+    Http::assertSentCount(1);
     $batchingServiceSpy->shouldNotHaveReceived('getOrCreateBatch');
     expect(Notification::count())->toBe(0);
 });
@@ -111,10 +117,7 @@ test('it processes notification when zaaktype has an active mapping', function (
         aanmaakdatum: '2024-01-01T10:00:00Z',
     );
 
-    $openzaakMock = Mockery::mock(Openzaak::class);
-    $openzaakMock->shouldReceive('get')
-        ->once()
-        ->andReturn(collect(makeZaakNotification($zaaktypeUrl)));
+    fakeZaakResponse(makeZaakNotification($zaaktypeUrl));
 
     $fakeBatch = Batch::create(['zaak_identificatie' => 'ZAAK-2024-001']);
 
@@ -127,7 +130,7 @@ test('it processes notification when zaaktype has an active mapping', function (
     $batchingServiceMock->shouldReceive('addNotificationToBatch')->once();
 
     $job = new IngestNotification($openNotification);
-    $job->handle($openzaakMock, $batchingServiceMock);
+    $job->handle(app(ZgwReader::class), $batchingServiceMock);
 
     expect(Notification::count())->toBe(1);
 });

@@ -30,5 +30,8 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="OPENZAAK_URL" value="https://openzaak.example.com/"/>
+        <env name="OPENZAAK_CLIENT_ID" value="test-client"/>
+        <env name="OPENZAAK_CLIENT_SECRET" value="test-secret-of-at-least-32-bytes-long"/>
     </php>
 </phpunit>

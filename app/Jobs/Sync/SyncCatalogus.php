@@ -4,10 +4,10 @@ namespace App\Jobs\Sync;
 
 use App\Models\Catalogus;
 use App\Models\ZaaktypeMapping;
+use App\Services\Zgw\ZgwReader;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Woweb\Openzaak\Openzaak;
 
 class SyncCatalogus implements ShouldQueue
 {
@@ -28,42 +28,33 @@ class SyncCatalogus implements ShouldQueue
         return ["catalogus:{$this->catalogus->id}"];
     }
 
-    public function handle(Openzaak $openzaak): void
+    public function handle(ZgwReader $zgw): void
     {
         Log::info('SyncCatalogus started', [
             'catalogus_id' => $this->catalogus->id,
             'catalogus_url' => $this->catalogus->url,
         ]);
 
-        $zaaktypenUrl = $this->buildZaaktypenUrl($this->catalogus->url);
         $synced = 0;
 
-        while ($zaaktypenUrl !== null) {
-            $response = $openzaak->get($zaaktypenUrl)->toArray();
-
-            $results = $response['results'] ?? [];
-
-            foreach ($results as $zaaktype) {
-                $url = $zaaktype['url'] ?? null;
-                if (! $url) {
-                    continue;
-                }
-
-                ZaaktypeMapping::updateOrCreate(
-                    ['zaaktype_url' => $url],
-                    [
-                        'catalogus_id' => $this->catalogus->id,
-                        'zaaktype_identificatie' => $zaaktype['identificatie'] ?? '',
-                        'zaaktype_omschrijving' => $zaaktype['omschrijving'] ?? '',
-                        'synced_at' => now(),
-                        // Preserve existing corsa_zaaktype_code and is_active on re-sync
-                    ]
-                );
-
-                $synced++;
+        foreach ($zgw->zaaktypen($this->catalogus->url) as $zaaktype) {
+            $url = $zaaktype['url'] ?? null;
+            if (! $url) {
+                continue;
             }
 
-            $zaaktypenUrl = $response['next'] ?? null;
+            ZaaktypeMapping::updateOrCreate(
+                ['zaaktype_url' => $url],
+                [
+                    'catalogus_id' => $this->catalogus->id,
+                    'zaaktype_identificatie' => $zaaktype['identificatie'] ?? '',
+                    'zaaktype_omschrijving' => $zaaktype['omschrijving'] ?? '',
+                    'synced_at' => now(),
+                    // Preserve existing corsa_zaaktype_code and is_active on re-sync
+                ]
+            );
+
+            $synced++;
         }
 
         $this->catalogus->update(['last_synced_at' => now()]);
@@ -72,17 +63,5 @@ class SyncCatalogus implements ShouldQueue
             'catalogus_id' => $this->catalogus->id,
             'synced_count' => $synced,
         ]);
-    }
-
-    /**
-     * Derive the zaaktypen list URL from the catalogus URL.
-     *
-     * Replaces /catalogussen/{uuid} with /zaaktypen?catalogus={catalogus_url}
-     */
-    private function buildZaaktypenUrl(string $catalogusUrl): string
-    {
-        $base = preg_replace('#/catalogussen/[^/?]+$#', '', $catalogusUrl);
-
-        return $base.'/zaaktypen?catalogus='.urlencode($catalogusUrl);
     }
 }
