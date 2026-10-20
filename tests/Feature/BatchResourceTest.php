@@ -48,6 +48,37 @@ test('it can filter batches by status', function () {
         ->assertCanNotSeeTableRecords([$processed]);
 });
 
+test('it orders zaak groups by their latest batch, descending by default', function () {
+    [$zaakA, $zaakAOlder, $zaakB, $zaakC] = createBatchesForGroupOrdering();
+
+    Livewire::test(ListBatches::class)
+        ->assertCanSeeTableRecords([$zaakA, $zaakAOlder, $zaakB, $zaakC], inOrder: true);
+});
+
+test('it orders zaak groups by their latest batch ascending when the group direction is reversed', function () {
+    [$zaakA, $zaakAOlder, $zaakB, $zaakC] = createBatchesForGroupOrdering();
+
+    Livewire::test(ListBatches::class)
+        ->set('tableGrouping', 'zaak_identificatie:asc')
+        ->assertCanSeeTableRecords([$zaakC, $zaakB, $zaakA, $zaakAOlder], inOrder: true);
+});
+
+/**
+ * Zaak A has both the newest and the oldest batch, so ordering groups by the
+ * earliest batch instead of the latest one would put it in the wrong place.
+ *
+ * @return array{0: Batch, 1: Batch, 2: Batch, 3: Batch}
+ */
+function createBatchesForGroupOrdering(): array
+{
+    $zaakAOlder = Batch::factory()->create(['zaak_identificatie' => 'ZAAK-2026-1001', 'created_at' => now()->subDays(3)]);
+    $zaakA = Batch::factory()->create(['zaak_identificatie' => 'ZAAK-2026-1001', 'created_at' => now()->subHour()]);
+    $zaakB = Batch::factory()->create(['zaak_identificatie' => 'ZAAK-2026-1002', 'created_at' => now()->subDay()]);
+    $zaakC = Batch::factory()->create(['zaak_identificatie' => 'ZAAK-2026-1003', 'created_at' => now()->subDays(2)]);
+
+    return [$zaakA, $zaakAOlder, $zaakB, $zaakC];
+}
+
 // ─── View page ───────────────────────────────────────────────────────────────
 
 test('it can render the view batch page', function () {

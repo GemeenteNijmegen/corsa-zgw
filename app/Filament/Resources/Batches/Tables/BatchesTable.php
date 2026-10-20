@@ -53,10 +53,12 @@ class BatchesTable
                     ->label('Zaak')
                     ->collapsible()
                     ->orderQueryUsing(fn (Builder $query, string $direction) => $query->orderByRaw(
-                        '(select max(b2.created_at) from batches b2 where b2.zaak_identificatie = batches.zaak_identificatie) desc'
+                        // The direction is interpolated into raw SQL, so only allow known values.
+                        '(select max(b2.created_at) from batches b2 where b2.zaak_identificatie = batches.zaak_identificatie) '
+                            .(strtolower($direction) === 'asc' ? 'asc' : 'desc')
                     )->orderBy('zaak_identificatie')),
             ])
-            ->defaultGroup('zaak_identificatie')
+            ->defaultGroup('zaak_identificatie', 'desc')
             ->filters([
                 SelectFilter::make('status')
                     ->label('Status')
