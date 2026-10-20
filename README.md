@@ -76,9 +76,25 @@ The following environment variables must be configured:
 
 | Variable | Description |
 |---|---|
-| `OPENZAAK_URL` | Base URL of the OpenZaak instance |
-| `OPENZAAK_CLIENT_ID` | OAuth client ID for OpenZaak |
-| `OPENZAAK_CLIENT_SECRET` | OAuth client secret for OpenZaak |
+| `OPENZAAK_URL` | Root URL of the OpenZaak instance (for example `https://openzaak.example.com/`) |
+| `OPENZAAK_CLIENT_ID` | Client ID of this application in OpenZaak |
+| `OPENZAAK_CLIENT_SECRET` | Client secret of this application in OpenZaak. Must be at least 32 bytes long. |
+
+The ZGW APIs are called through `woweb/laravel-zgw-client`, configured in `config/zgw.php`. The variables below are optional. When a variable is not set, the value falls back to the `OPENZAAK_*` variables above.
+
+| Variable | Default | Description |
+|---|---|---|
+| `ZGW_ZAKEN_BASE_URL` | `{OPENZAAK_URL}zaken/api/v1/` | Full base URL of the Zaken API |
+| `ZGW_CATALOGI_BASE_URL` | `{OPENZAAK_URL}catalogi/api/v1/` | Full base URL of the Catalogi API |
+| `ZGW_DOCUMENTEN_BASE_URL` | `{OPENZAAK_URL}documenten/api/v1/` | Full base URL of the Documenten API |
+| `ZGW_CLIENT_ID` | `OPENZAAK_CLIENT_ID` | Client ID used to sign the JWT |
+| `ZGW_CLIENT_SECRET` | `OPENZAAK_CLIENT_SECRET` | Client secret used to sign the JWT (at least 32 bytes) |
+| `ZGW_USER_ID` | `application` | `user_id` claim, shown in the OpenZaak audit trail |
+| `ZGW_USER_REPRESENTATION` | `Application background task` | `user_representation` claim, shown in the OpenZaak audit trail |
+| `ZGW_VERSION` | `1.7` | ZGW standard release of the OpenZaak instance (`1.5`, `1.6` or `1.7`) |
+| `ZGW_ALLOWED_HOSTS` | empty | Extra hosts the client may call, comma separated. Only needed when OpenZaak returns links on a host other than the base URLs. |
+
+Requests are only sent to the hosts of the base URLs and `ZGW_ALLOWED_HOSTS`. A notification whose `hoofdObject` or `resourceUrl` is on another host is rejected with a 422.
 
 ### Corsa ZaakDMS
 
