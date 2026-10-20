@@ -52,7 +52,6 @@ class BatchesTable
                     ->label('Zaak')
                     ->collapsible(),
             ])
-            ->defaultGroup('zaak_identificatie')
             ->filters([
                 SelectFilter::make('status')
                     ->label('Status')
