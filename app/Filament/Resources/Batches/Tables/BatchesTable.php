@@ -7,6 +7,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Grouping\Group;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class BatchesTable
 {
@@ -50,9 +51,14 @@ class BatchesTable
             ->groups([
                 Group::make('zaak_identificatie')
                     ->label('Zaak')
-                    ->collapsible(),
+                    ->collapsible()
+                    ->orderQueryUsing(fn (Builder $query, string $direction) => $query->orderByRaw(
+                        // The direction is interpolated into raw SQL, so only allow known values.
+                        '(select max(b2.created_at) from batches b2 where b2.zaak_identificatie = batches.zaak_identificatie) '
+                            .(strtolower($direction) === 'asc' ? 'asc' : 'desc')
+                    )->orderBy('zaak_identificatie')),
             ])
-            ->defaultGroup('zaak_identificatie')
+            ->defaultGroup('zaak_identificatie', 'desc')
             ->filters([
                 SelectFilter::make('status')
                     ->label('Status')
