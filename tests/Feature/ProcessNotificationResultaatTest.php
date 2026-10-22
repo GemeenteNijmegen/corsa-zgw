@@ -4,11 +4,16 @@ use App\Jobs\Notifications\HandleNotification;
 use App\Models\Batch;
 use App\Models\Notification;
 use App\Services\CorsaZaakdmsService;
+use App\Services\Zgw\ZgwReader;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 uses(Illuminate\Foundation\Testing\RefreshDatabase::class);
 
-beforeEach(fn () => Log::spy());
+beforeEach(function () {
+    Log::spy();
+    Http::preventStrayRequests();
+});
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -29,6 +34,40 @@ function makeResultaatNotification(array $overrides = []): Notification
         ],
         'processed' => false,
     ], $overrides));
+}
+
+/**
+ * Fake the resultaat, resultaattype and zaak responses of the ZGW APIs.
+ */
+function fakeResultaatApis(?string $einddatum): void
+{
+    $zaakUrl = 'https://openzaak.example.com/zaken/api/v1/zaken/abc-123';
+    $resultaatUrl = 'https://openzaak.example.com/zaken/api/v1/resultaten/def-456';
+    $resultaattypeUrl = 'https://openzaak.example.com/catalogi/api/v1/resultaattypen/xyz-789';
+
+    Http::fake([
+        $resultaatUrl => Http::response(['resultaattype' => $resultaattypeUrl, 'zaak' => $zaakUrl]),
+        $resultaattypeUrl => Http::response(['omschrijving' => 'Zaak afgehandeld']),
+        $zaakUrl.'*' => Http::response([
+            'uuid' => 'abc-123',
+            'url' => $zaakUrl,
+            'identificatie' => 'ZAAK-2024-001',
+            'zaaktype' => 'https://openzaak.example.com/catalogi/api/v1/zaaktypen/111',
+            'omschrijving' => 'Test zaak',
+            'startdatum' => '2024-01-15',
+            'registratiedatum' => '2024-01-15T10:30:00Z',
+            'einddatum' => $einddatum,
+            'einddatumGepland' => null,
+            'uiterlijkeEinddatumAfdoening' => null,
+            'bronorganisatie' => null,
+            'zaakgeometrie' => null,
+        ]),
+    ]);
+}
+
+function resultaatService($zaakdmsMock): CorsaZaakdmsService
+{
+    return new CorsaZaakdmsService(app(ZgwReader::class), $zaakdmsMock);
 }
 
 // ─── HandleNotification routing ─────────────────────────────────────────────
@@ -81,37 +120,7 @@ test('create:resultaat rethrows exception from service', function () {
 test('processResultaatAangemaakt calls updateZaak with correct options', function () {
     $notification = makeResultaatNotification();
 
-    $zaakUrl = 'https://openzaak.example.com/zaken/api/v1/zaken/abc-123';
-    $resultaatUrl = 'https://openzaak.example.com/zaken/api/v1/resultaten/def-456';
-    $resultaattypeUrl = 'https://openzaak.example.com/catalogi/api/v1/resultaattypen/xyz-789';
-
-    $resultaatData = ['resultaattype' => $resultaattypeUrl, 'zaak' => $zaakUrl];
-    $resultaattypeData = ['omschrijving' => 'Zaak afgehandeld'];
-    $zaakData = [
-        'uuid' => 'abc-123',
-        'url' => $zaakUrl,
-        'identificatie' => 'ZAAK-2024-001',
-        'zaaktype' => 'https://openzaak.example.com/catalogi/api/v1/zaaktypen/111',
-        'omschrijving' => 'Test zaak',
-        'startdatum' => '2024-01-15',
-        'registratiedatum' => '2024-01-15T10:30:00Z',
-        'einddatum' => '2026-03-11',
-        'einddatumGepland' => null,
-        'uiterlijkeEinddatumAfdoening' => null,
-        'bronorganisatie' => null,
-        'zaakgeometrie' => null,
-    ];
-
-    $openzaakMock = Mockery::mock(\Woweb\Openzaak\Openzaak::class);
-    $openzaakMock->shouldReceive('get')
-        ->with($resultaatUrl)
-        ->andReturn(collect($resultaatData));
-    $openzaakMock->shouldReceive('get')
-        ->with($resultaattypeUrl)
-        ->andReturn(collect($resultaattypeData));
-    $openzaakMock->shouldReceive('get')
-        ->withArgs(fn ($url) => str_starts_with($url, $zaakUrl))
-        ->andReturn(collect($zaakData));
+    fakeResultaatApis('2026-03-11');
 
     $zaakdmsMock = Mockery::mock(\Woweb\Zaakdms\Zaakdms::class);
     $zaakdmsMock->shouldReceive('geefZaakDetails')
@@ -125,40 +134,15 @@ test('processResultaatAangemaakt calls updateZaak with correct options', functio
             && $options['einddatum'] === '20260311')
         ->andReturn('stuf-ref-001');
 
-    $service = new \App\Services\CorsaZaakdmsService($openzaakMock, $zaakdmsMock);
-    $service->processResultaatAangemaakt($notification);
+    resultaatService($zaakdmsMock)->processResultaatAangemaakt($notification);
+
+    Http::assertSentCount(3);
 });
 
 test('processResultaatAangemaakt uses today as einddatum fallback when zaak has no einddatum', function () {
     $notification = makeResultaatNotification();
 
-    $zaakUrl = 'https://openzaak.example.com/zaken/api/v1/zaken/abc-123';
-    $resultaatUrl = 'https://openzaak.example.com/zaken/api/v1/resultaten/def-456';
-    $resultaattypeUrl = 'https://openzaak.example.com/catalogi/api/v1/resultaattypen/xyz-789';
-
-    $resultaatData = ['resultaattype' => $resultaattypeUrl, 'zaak' => $zaakUrl];
-    $resultaattypeData = ['omschrijving' => 'Zaak afgehandeld'];
-    $zaakData = [
-        'uuid' => 'abc-123',
-        'url' => $zaakUrl,
-        'identificatie' => 'ZAAK-2024-001',
-        'zaaktype' => 'https://openzaak.example.com/catalogi/api/v1/zaaktypen/111',
-        'omschrijving' => 'Test zaak',
-        'startdatum' => '2024-01-15',
-        'registratiedatum' => '2024-01-15T10:30:00Z',
-        'einddatum' => null,
-        'einddatumGepland' => null,
-        'uiterlijkeEinddatumAfdoening' => null,
-        'bronorganisatie' => null,
-        'zaakgeometrie' => null,
-    ];
-
-    $openzaakMock = Mockery::mock(\Woweb\Openzaak\Openzaak::class);
-    $openzaakMock->shouldReceive('get')->with($resultaatUrl)->andReturn(collect($resultaatData));
-    $openzaakMock->shouldReceive('get')->with($resultaattypeUrl)->andReturn(collect($resultaattypeData));
-    $openzaakMock->shouldReceive('get')
-        ->withArgs(fn ($url) => str_starts_with($url, $zaakUrl))
-        ->andReturn(collect($zaakData));
+    fakeResultaatApis(null);
 
     $zaakdmsMock = Mockery::mock(\Woweb\Zaakdms\Zaakdms::class);
     $zaakdmsMock->shouldReceive('geefZaakDetails')
@@ -168,52 +152,25 @@ test('processResultaatAangemaakt uses today as einddatum fallback when zaak has 
         ->withArgs(fn ($options) => $options['einddatum'] === \Carbon\Carbon::today()->format('Ymd'))
         ->andReturn('stuf-ref-001');
 
-    $service = new \App\Services\CorsaZaakdmsService($openzaakMock, $zaakdmsMock);
-    $service->processResultaatAangemaakt($notification);
+    resultaatService($zaakdmsMock)->processResultaatAangemaakt($notification);
 });
 
 test('processResultaatAangemaakt throws when zaak does not exist in Corsa', function () {
     $notification = makeResultaatNotification();
 
-    $zaakUrl = 'https://openzaak.example.com/zaken/api/v1/zaken/abc-123';
-    $resultaatUrl = 'https://openzaak.example.com/zaken/api/v1/resultaten/def-456';
-    $resultaattypeUrl = 'https://openzaak.example.com/catalogi/api/v1/resultaattypen/xyz-789';
-
-    $resultaatData = ['resultaattype' => $resultaattypeUrl, 'zaak' => $zaakUrl];
-    $resultaattypeData = ['omschrijving' => 'Zaak afgehandeld'];
-    $zaakData = [
-        'uuid' => 'abc-123',
-        'url' => $zaakUrl,
-        'identificatie' => 'ZAAK-2024-001',
-        'zaaktype' => 'https://openzaak.example.com/catalogi/api/v1/zaaktypen/111',
-        'omschrijving' => 'Test zaak',
-        'startdatum' => '2024-01-15',
-        'registratiedatum' => '2024-01-15T10:30:00Z',
-        'einddatum' => '2026-03-11',
-        'einddatumGepland' => null,
-        'uiterlijkeEinddatumAfdoening' => null,
-        'bronorganisatie' => null,
-        'zaakgeometrie' => null,
-    ];
-
-    $openzaakMock = Mockery::mock(\Woweb\Openzaak\Openzaak::class);
-    $openzaakMock->shouldReceive('get')->with($resultaatUrl)->andReturn(collect($resultaatData));
-    $openzaakMock->shouldReceive('get')->with($resultaattypeUrl)->andReturn(collect($resultaattypeData));
-    $openzaakMock->shouldReceive('get')
-        ->withArgs(fn ($url) => str_starts_with($url, $zaakUrl))
-        ->andReturn(collect($zaakData));
+    fakeResultaatApis('2026-03-11');
 
     $zaakdmsMock = Mockery::mock(\Woweb\Zaakdms\Zaakdms::class);
     $zaakdmsMock->shouldReceive('geefZaakDetails')
         ->andThrow(new Exception('Zaak not found in Corsa'));
 
-    $service = new \App\Services\CorsaZaakdmsService($openzaakMock, $zaakdmsMock);
-
-    expect(fn () => $service->processResultaatAangemaakt($notification))
+    expect(fn () => resultaatService($zaakdmsMock)->processResultaatAangemaakt($notification))
         ->toThrow(RuntimeException::class, 'Missing zaak in Corsa for resultaat update');
 });
 
 test('processResultaatAangemaakt throws when resourceUrl is missing', function () {
+    Http::fake();
+
     $batch = Batch::create(['zaak_identificatie' => 'ZAAK-2024-001', 'status' => 'pending']);
     $notification = Notification::create([
         'batch_id' => $batch->id,
@@ -226,11 +183,10 @@ test('processResultaatAangemaakt throws when resourceUrl is missing', function (
         'processed' => false,
     ]);
 
-    $openzaakMock = Mockery::mock(\Woweb\Openzaak\Openzaak::class);
     $zaakdmsMock = Mockery::mock(\Woweb\Zaakdms\Zaakdms::class);
 
-    $service = new \App\Services\CorsaZaakdmsService($openzaakMock, $zaakdmsMock);
-
-    expect(fn () => $service->processResultaatAangemaakt($notification))
+    expect(fn () => resultaatService($zaakdmsMock)->processResultaatAangemaakt($notification))
         ->toThrow(RuntimeException::class, 'Missing resultaat url for resultaat notification');
+
+    Http::assertNothingSent();
 });

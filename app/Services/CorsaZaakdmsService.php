@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Notification;
 use App\Models\ZaaktypeMapping;
+use App\Services\Zgw\ZgwReader;
 use App\ValueObjects\ZGW\Zaak;
 use Carbon\Carbon;
 use Illuminate\Support\Arr;
@@ -11,7 +12,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
-use Woweb\Openzaak\Openzaak;
 use Woweb\Zaakdms\Helper;
 use Woweb\Zaakdms\Zaakdms;
 
@@ -26,7 +26,7 @@ class CorsaZaakdmsService
     private const TEMP_DIR = 'zaakdms-temp';
 
     public function __construct(
-        private readonly Openzaak $openzaak,
+        private readonly ZgwReader $zgw,
         private readonly Zaakdms $zaakdms
     ) {}
 
@@ -107,7 +107,7 @@ class CorsaZaakdmsService
             'status_url' => $statusUrl,
         ]);
 
-        $statusData = $this->openzaak->get($statusUrl)->toArray();
+        $statusData = $this->zgw->get($statusUrl);
         $statusType = $this->resolveStatustype($statusData);
 
         Log::debug('Corsa partial update status resolved', [
@@ -166,7 +166,7 @@ class CorsaZaakdmsService
             'zoi_url' => $zoiUrl,
         ]);
 
-        $zoiData = $this->openzaak->get($zoiUrl)->toArray();
+        $zoiData = $this->zgw->get($zoiUrl);
         $documentUrl = $zoiData['informatieobject'] ?? $zoiData['informatieObject'] ?? null;
 
         if (! $documentUrl) {
@@ -185,7 +185,7 @@ class CorsaZaakdmsService
             throw new RuntimeException('Missing zaak in Corsa for partial update');
         }
 
-        $documentData = $this->openzaak->get($documentUrl)->toArray();
+        $documentData = $this->zgw->get($documentUrl);
         $documentTypeData = $this->resolveDocumentType($documentData);
 
         $documentIdentificatie = $documentData['identificatie'] ?? $documentData['uuid'] ?? null;
@@ -261,9 +261,9 @@ class CorsaZaakdmsService
             'resultaat_url' => $resultaatUrl,
         ]);
 
-        $resultaatData = $this->openzaak->get($resultaatUrl)->toArray();
+        $resultaatData = $this->zgw->get($resultaatUrl);
         $resultaattypeUrl = $resultaatData['resultaattype'] ?? null;
-        $resultaattypeData = $resultaattypeUrl ? $this->openzaak->get($resultaattypeUrl)->toArray() : [];
+        $resultaattypeData = $resultaattypeUrl ? $this->zgw->get($resultaattypeUrl) : [];
 
         $zaakUrl = $resultaatData['zaak'] ?? $this->resolveZaakUrlFromNotification($notification);
         if (! $zaakUrl) {
@@ -312,14 +312,14 @@ class CorsaZaakdmsService
 
         Log::debug('Fetching zaak from ZGW', ['zaak_url' => $expandedUrl]);
 
-        return new Zaak(...$this->openzaak->get($expandedUrl)->toArray());
+        return new Zaak(...$this->zgw->get($expandedUrl));
     }
 
     private function fetchZaaktype(string $zaaktypeUrl): array
     {
         Log::debug('Fetching zaaktype from ZGW', ['zaaktype_url' => $zaaktypeUrl]);
 
-        return $this->openzaak->get($zaaktypeUrl)->toArray();
+        return $this->zgw->get($zaaktypeUrl);
     }
 
     private function resolveDocumentType(array $documentData): array
@@ -331,7 +331,7 @@ class CorsaZaakdmsService
 
         Log::debug('Fetching document type from ZGW', ['documenttype_url' => $documentTypeUrl]);
 
-        return $this->openzaak->get($documentTypeUrl)->toArray();
+        return $this->zgw->get($documentTypeUrl);
     }
 
     private function resolveStatustype(array $statusData): array
@@ -347,7 +347,7 @@ class CorsaZaakdmsService
 
         Log::debug('Fetching statustype from ZGW', ['statustype_url' => $statusTypeUrl]);
 
-        return $this->openzaak->get($statusTypeUrl)->toArray();
+        return $this->zgw->get($statusTypeUrl);
     }
 
     private function mapZaakToCorsaCreateOptions(Zaak $zaak, array $zaaktype): array
@@ -510,7 +510,7 @@ class CorsaZaakdmsService
             'inhoud_url' => $inhoudUrl,
         ]);
 
-        $content = $this->openzaak->getRaw($inhoudUrl);
+        $content = $this->zgw->getRaw($inhoudUrl);
         if ($content === '') {
             Log::warning('Downloaded document content is empty', [
                 'notification_id' => $notification->id,

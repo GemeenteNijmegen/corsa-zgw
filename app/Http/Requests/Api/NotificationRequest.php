@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api;
 
+use App\Rules\ConfiguredZgwHost;
 use Illuminate\Foundation\Http\FormRequest;
 
 class NotificationRequest extends FormRequest
@@ -25,8 +26,8 @@ class NotificationRequest extends FormRequest
             'actie' => 'required|string|in:create,update,delete',
             'kanaal' => 'required|string|in:zaken,objecten',
             'resource' => 'required|string|in:zaak,status,zaakinformatieobject,resultaat',
-            'hoofdObject' => 'required|url',
-            'resourceUrl' => 'required|url',
+            'hoofdObject' => ['bail', 'required', 'url', app(ConfiguredZgwHost::class)],
+            'resourceUrl' => ['bail', 'required', 'url', app(ConfiguredZgwHost::class)],
             'aanmaakdatum' => 'required|date',
         ];
     }

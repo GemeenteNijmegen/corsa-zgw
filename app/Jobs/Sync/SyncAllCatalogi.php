@@ -3,18 +3,18 @@
 namespace App\Jobs\Sync;
 
 use App\Models\Catalogus;
+use App\Services\Zgw\ZgwReader;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Woweb\Openzaak\Openzaak;
 
 class SyncAllCatalogi implements ShouldQueue
 {
     use Queueable;
 
-    public function handle(Openzaak $openzaak): void
+    public function handle(ZgwReader $zgw): void
     {
-        $zgwCatalogi = $openzaak->catalogi()->catalogussen()->getAll();
+        $zgwCatalogi = $zgw->catalogussen();
 
         $zgwUrls = $zgwCatalogi->pluck('url')->filter()->values();
 

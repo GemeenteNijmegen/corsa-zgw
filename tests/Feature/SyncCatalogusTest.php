@@ -3,9 +3,29 @@
 use App\Jobs\Sync\SyncCatalogus;
 use App\Models\Catalogus;
 use App\Models\ZaaktypeMapping;
-use Woweb\Openzaak\Openzaak;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 
 uses(Illuminate\Foundation\Testing\RefreshDatabase::class);
+
+const ZAAKTYPEN_URL = 'https://openzaak.example.com/catalogi/api/v1/zaaktypen';
+
+beforeEach(fn () => Http::preventStrayRequests());
+
+function runSyncCatalogus(Catalogus $catalogus): void
+{
+    app()->call([new SyncCatalogus($catalogus), 'handle']);
+}
+
+/**
+ * The query parameters of a faked request.
+ */
+function requestQuery(Request $request): array
+{
+    parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+    return $query;
+}
 
 test('it upserts zaaktype mappings from a response', function () {
     $catalogus = Catalogus::factory()->create([
@@ -14,11 +34,8 @@ test('it upserts zaaktype mappings from a response', function () {
 
     $zaaktypeUrl = 'https://openzaak.example.com/catalogi/api/v1/zaaktypen/aaa-111';
 
-    $openzaakMock = Mockery::mock(Openzaak::class);
-    $openzaakMock->shouldReceive('get')
-        ->once()
-        ->with('https://openzaak.example.com/catalogi/api/v1/zaaktypen?catalogus='.urlencode($catalogus->url))
-        ->andReturn(collect([
+    Http::fake([
+        ZAAKTYPEN_URL.'*' => Http::response([
             'count' => 1,
             'next' => null,
             'previous' => null,
@@ -29,10 +46,15 @@ test('it upserts zaaktype mappings from a response', function () {
                     'omschrijving' => 'Test zaaktype',
                 ],
             ],
-        ]));
+        ]),
+    ]);
 
-    $job = new SyncCatalogus($catalogus);
-    $job->handle($openzaakMock);
+    runSyncCatalogus($catalogus);
+
+    Http::assertSentCount(1);
+    Http::assertSent(fn (Request $request) => $request->method() === 'GET'
+        && strtok($request->url(), '?') === ZAAKTYPEN_URL
+        && requestQuery($request) === ['catalogus' => $catalogus->url]);
 
     expect(ZaaktypeMapping::count())->toBe(1);
 
@@ -53,32 +75,29 @@ test('it follows pagination next links', function () {
         'url' => 'https://openzaak.example.com/catalogi/api/v1/catalogussen/abc-123',
     ]);
 
-    $page1Url = 'https://openzaak.example.com/catalogi/api/v1/zaaktypen?catalogus='.urlencode($catalogus->url);
-    $page2Url = 'https://openzaak.example.com/catalogi/api/v1/zaaktypen?page=2';
+    $page2Url = ZAAKTYPEN_URL.'?page=2';
 
-    $openzaakMock = Mockery::mock(Openzaak::class);
-    $openzaakMock->shouldReceive('get')
-        ->once()
-        ->with($page1Url)
-        ->andReturn(collect([
+    Http::fake(function (Request $request) use ($page2Url) {
+        if ($request->url() === $page2Url) {
+            return Http::response([
+                'count' => 2,
+                'next' => null,
+                'results' => [['url' => 'https://openzaak.example.com/catalogi/api/v1/zaaktypen/bbb-222', 'identificatie' => 'ZT-002', 'omschrijving' => 'Type 2']],
+            ]);
+        }
+
+        return Http::response([
             'count' => 2,
             'next' => $page2Url,
             'results' => [['url' => 'https://openzaak.example.com/catalogi/api/v1/zaaktypen/aaa-111', 'identificatie' => 'ZT-001', 'omschrijving' => 'Type 1']],
-        ]));
+        ]);
+    });
 
-    $openzaakMock->shouldReceive('get')
-        ->once()
-        ->with($page2Url)
-        ->andReturn(collect([
-            'count' => 2,
-            'next' => null,
-            'results' => [['url' => 'https://openzaak.example.com/catalogi/api/v1/zaaktypen/bbb-222', 'identificatie' => 'ZT-002', 'omschrijving' => 'Type 2']],
-        ]));
-
-    $job = new SyncCatalogus($catalogus);
-    $job->handle($openzaakMock);
+    runSyncCatalogus($catalogus);
 
     expect(ZaaktypeMapping::count())->toBe(2);
+    Http::assertSentCount(2);
+    Http::assertSent(fn (Request $request) => $request->url() === $page2Url);
 });
 
 test('it preserves existing corsa_zaaktype_code and is_active on re-sync', function () {
@@ -96,19 +115,17 @@ test('it preserves existing corsa_zaaktype_code and is_active on re-sync', funct
         'is_active' => true,
     ]);
 
-    $openzaakMock = Mockery::mock(Openzaak::class);
-    $openzaakMock->shouldReceive('get')
-        ->once()
-        ->andReturn(collect([
+    Http::fake([
+        ZAAKTYPEN_URL.'*' => Http::response([
             'count' => 1,
             'next' => null,
             'results' => [
                 ['url' => $zaaktypeUrl, 'identificatie' => 'ZT-001', 'omschrijving' => 'Updated description'],
             ],
-        ]));
+        ]),
+    ]);
 
-    $job = new SyncCatalogus($catalogus);
-    $job->handle($openzaakMock);
+    runSyncCatalogus($catalogus);
 
     $mapping = ZaaktypeMapping::where('zaaktype_url', $zaaktypeUrl)->first();
     expect($mapping->zaaktype_omschrijving)->toBe('Updated description')

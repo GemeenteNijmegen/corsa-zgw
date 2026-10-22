@@ -5,12 +5,13 @@ namespace App\Jobs\Notifications;
 use App\Models\Notification;
 use App\Models\ZaaktypeMapping;
 use App\Services\BatchingService;
+use App\Services\Zgw\ZgwReader;
 use App\ValueObjects\OpenNotification;
 use App\ValueObjects\ZGW\Zaak;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Woweb\Openzaak\Openzaak;
+use Woweb\Zgw\Exceptions\DisallowedHostException;
 
 class IngestNotification implements ShouldQueue
 {
@@ -34,7 +35,7 @@ class IngestNotification implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(Openzaak $openzaak, BatchingService $batchingService): void
+    public function handle(ZgwReader $zgw, BatchingService $batchingService): void
     {
         if ($this->opennotification->kanaal != 'zaken') {
             // Don't process the notification
@@ -42,7 +43,20 @@ class IngestNotification implements ShouldQueue
         }
 
         // get the zaak from the hoofdobject URL
-        $zaak = new Zaak(...$openzaak->get($this->opennotification->hoofdObject)->toArray());
+        try {
+            $zaak = new Zaak(...$zgw->get($this->opennotification->hoofdObject));
+        } catch (DisallowedHostException $e) {
+            // A URL outside the configured ZGW hosts will never succeed, so fail without a retry.
+            Log::warning('Notification refers to a host that is not a configured ZGW host', [
+                'actie' => $this->opennotification->actie,
+                'resource' => $this->opennotification->resource,
+                'reason' => $e->getMessage(),
+            ]);
+
+            $this->fail($e);
+
+            return;
+        }
 
         if (! ZaaktypeMapping::where('zaaktype_url', $zaak->zaaktype)->where('is_active', true)->exists()) {
             Log::warning('Zaaktype not active or unknown, ignoring notification', [

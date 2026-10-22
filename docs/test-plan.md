@@ -28,7 +28,7 @@ The tests added in `test/characterization-coverage` record the current behaviour
 
 Tests whose name contains `currently` record behaviour that may be intended but deserves a decision, such as the endpoint accepting `update` and `delete` notifications that are never handled.
 
-The new tests fake the ZGW APIs with `Http::fake()`, so they describe the outgoing requests and their effect rather than calls on the ZGW client library.
+All tests that touch the ZGW APIs fake them with `Http::fake()`, so they describe the outgoing requests and their effect rather than calls on the ZGW client library. The ZGW host and client credentials for the tests are set in `phpunit.xml` through the `OPENZAAK_*` variables, which also covers the fallback in `config/zgw.php`.
 
 ---
 

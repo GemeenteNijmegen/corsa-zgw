@@ -114,3 +114,29 @@ test('it currently accepts update and delete notifications', function (string $a
 
     Queue::assertPushed(IngestNotification::class, 1);
 })->with(['update', 'delete']);
+
+test('it rejects a URL that is not on a configured ZGW host', function (string $field, string $url) {
+    Sanctum::actingAs(User::factory()->create());
+
+    $this->postJson(NOTIFICATIONS_ENDPOINT, validNotificationPayload([$field => $url]))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors([$field]);
+
+    Queue::assertNothingPushed();
+})->with([
+    'hoofdObject on another host' => ['hoofdObject', 'https://elsewhere.example.com/zaken/api/v1/zaken/00000000-0000-0000-0000-000000000001'],
+    'resourceUrl on another host' => ['resourceUrl', 'https://elsewhere.example.com/zaken/api/v1/zaken/00000000-0000-0000-0000-000000000001'],
+    'hoofdObject over plain http' => ['hoofdObject', 'http://openzaak.example.com/zaken/api/v1/zaken/00000000-0000-0000-0000-000000000001'],
+    'resourceUrl on another port' => ['resourceUrl', 'https://openzaak.example.com:8443/zaken/api/v1/zaken/00000000-0000-0000-0000-000000000001'],
+]);
+
+test('it accepts a URL on a host from the extra allowed hosts', function () {
+    Sanctum::actingAs(User::factory()->create());
+    config(['zgw.connections.main.allowed_hosts' => ['documents.example.com']]);
+
+    $this->postJson(NOTIFICATIONS_ENDPOINT, validNotificationPayload([
+        'resourceUrl' => 'https://documents.example.com/documenten/api/v1/enkelvoudiginformatieobjecten/00000000-0000-0000-0000-000000000001',
+    ]))->assertOk();
+
+    Queue::assertPushed(IngestNotification::class, 1);
+});

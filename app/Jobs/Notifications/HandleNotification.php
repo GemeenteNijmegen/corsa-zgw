@@ -8,6 +8,7 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Woweb\Zgw\Exceptions\DisallowedHostException;
 
 class HandleNotification implements ShouldQueue
 {
@@ -74,6 +75,14 @@ class HandleNotification implements ShouldQueue
             Log::info('Notification processed successfully', [
                 'notification_id' => $this->notification->id,
             ]);
+        } catch (DisallowedHostException $e) {
+            // A URL outside the configured ZGW hosts will never succeed, so fail without a retry.
+            Log::warning('Notification refers to a host that is not a configured ZGW host', [
+                'notification_id' => $this->notification->id,
+                'reason' => $e->getMessage(),
+            ]);
+
+            $this->fail($e);
         } catch (\Exception $e) {
             Log::error('Error processing notification', [
                 'notification_id' => $this->notification->id,
