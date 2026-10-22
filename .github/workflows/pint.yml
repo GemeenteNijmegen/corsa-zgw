@@ -1,14 +1,26 @@
 name: Laravel Pint Linting
+
 on: pull_request
+
+permissions:
+  contents: read
+
 jobs:
   phplint:
     runs-on: ubuntu-latest
     steps:
-        - uses: actions/checkout@v4
-        
-        - name: "laravel-pint"
-          uses: aglipanci/laravel-pint-action@latest
-          with:
-            preset: laravel
-            testMode: true
-            pintVersion: 1.27.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - name: Install composer dependencies
+        uses: ramsey/composer-install@a8d0d959dab41457692a5e2041bd9b757a119e3f # 3.2.1
+
+      - name: Run Pint
+        run: ./vendor/bin/pint --test
