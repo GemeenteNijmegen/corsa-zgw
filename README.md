@@ -91,7 +91,7 @@ A document with status `in_bewerking` that has no content yet (no `inhoud`, or a
 
 ### Failed notifications
 
-When the job that processes a notification fails for good (after its last attempt, or right away on a permanent error), the notification gets `failed_at`, a short failure description and the id of the failed job. For an HTTP error the description only keeps the status; other messages are shortened, with long numbers and e-mail addresses masked. A later run that processes the notification, for example a retry from Horizon, clears these fields again.
+When the job that processes a notification fails for good (after its last attempt, or right away on a permanent error), the notification gets `failed_at`, a short failure description and the id of the failed job. For an HTTP error the description only keeps the status, for a database error only the SQLSTATE; other messages are shortened, with long numbers and e-mail addresses masked. A later run that processes the notification, for example a retry from Horizon, clears these fields again.
 
 The admin panel shows each notification as processed, failed or not processed yet, and links a failed notification to its failed job in Horizon (opening in a new tab). Horizon keeps failed jobs for a limited time (`horizon.trim.failed`, a week by default); after that the link no longer works, but the failure description stays on the notification.
 

@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Str;
 use Throwable;
@@ -11,7 +12,8 @@ use Woweb\Zgw\Exceptions\ApiRequestException;
  * A short description of why a job failed, safe to store and show in the admin panel.
  *
  * For an HTTP error only the status is kept, because the message of those exceptions contains
- * (part of) the response body. Other messages are shortened, and numbers that look like a BSN
+ * (part of) the response body. For a database error only the SQLSTATE is kept, because its
+ * message contains the connection details and the query. Other messages are shortened, and numbers that look like a BSN
  * or another personal number and e-mail addresses are masked, since an error from a remote
  * system may repeat what it was sent.
  */
@@ -27,9 +29,11 @@ class FailureDescription
             default => null,
         };
 
-        $text = $status !== null
-            ? "HTTP {$status}"
-            : self::mask(Str::squish($e->getMessage()));
+        $text = match (true) {
+            $status !== null => "HTTP {$status}",
+            $e instanceof QueryException => 'SQLSTATE '.($e->errorInfo[0] ?? $e->getCode()),
+            default => self::mask(Str::squish($e->getMessage())),
+        };
 
         return Str::limit(class_basename($e).': '.$text, self::MAX_LENGTH - 3);
     }

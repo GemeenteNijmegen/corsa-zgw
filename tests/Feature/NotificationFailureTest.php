@@ -10,10 +10,12 @@ use App\Services\BatchingService;
 use App\Services\CorsaZaakdmsService;
 use App\Support\FailureDescription;
 use GuzzleHttp\Psr7\Response as Psr7Response;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Queue\Events\JobFailed;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -178,6 +180,19 @@ test('the failure description of an HTTP error keeps the status and not the resp
     $response = new Response(new Psr7Response(500, [], '{"detail":"Testpersoon 000000000"}'));
 
     expect(FailureDescription::from(new RequestException($response)))->toBe('RequestException: HTTP 500');
+});
+
+test('the failure description of a database error keeps the SQLSTATE and not the connection or the query', function () {
+    try {
+        DB::table('table_that_does_not_exist')->where('zaak_identificatie', 'ZAAK-0001')->get();
+        $this->fail('The query should have failed');
+    } catch (QueryException $e) {
+        $description = FailureDescription::from($e);
+    }
+
+    expect($description)->toBe('QueryException: SQLSTATE HY000')
+        ->and($description)->not->toContain('Connection:')
+        ->and($description)->not->toContain('SQL:');
 });
 
 test('the failure description masks personal numbers and e-mail addresses and is shortened', function () {
