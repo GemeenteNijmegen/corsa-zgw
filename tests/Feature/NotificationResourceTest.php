@@ -9,6 +9,7 @@ use App\Filament\Resources\Notifications\Pages\ListNotifications;
 use App\Models\Batch;
 use App\Models\Notification;
 use App\Models\User;
+use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Filament\Navigation\NavigationGroup;
@@ -285,4 +286,41 @@ test('the view action of a failed notification shows the failure and links to th
         ->assertMountedActionModalSee('Openen in de job monitor')
         ->assertMountedActionModalSeeHtml('href="'.e($failed->failedJobUrl()).'"')
         ->assertMountedActionModalSeeHtml('target="_blank"');
+});
+
+// ─── Layout ──────────────────────────────────────────────────────────────────
+
+test('the record actions are icon buttons with a tooltip, so they stay in view next to the columns', function () {
+    $failed = Notification::factory()->direct()->failed()->create();
+
+    Livewire::test(ListNotifications::class)
+        ->assertActionExists(
+            TestAction::make('view_payload')->table($failed),
+            fn (Action $action): bool => $action->isIconButton() && $action->getTooltip() === 'Bekijk payload',
+        )
+        ->assertActionExists(
+            TestAction::make('failed_job')->table($failed),
+            fn (Action $action): bool => $action->isIconButton() && $action->getTooltip() === 'Mislukte job openen in de job monitor',
+        )
+        ->assertSeeHtml('aria-label="Bekijk payload"')
+        ->assertSeeHtml('aria-label="Mislukte job"');
+});
+
+test('the overview hides the processing time by default and can show it again', function () {
+    $processed = createDirectNotification(['processed' => true, 'processed_at' => now()]);
+
+    $component = Livewire::test(ListNotifications::class);
+
+    foreach (['created_at', 'zaak_identificatie', 'route', 'type', 'status', 'batch'] as $column) {
+        $component->assertCanRenderTableColumn($column);
+    }
+
+    $processedAt = $component->instance()->getTable()->getColumn('processed_at');
+    expect($processedAt->isToggleable())->toBeTrue()
+        ->and($processedAt->isToggledHiddenByDefault())->toBeTrue();
+
+    $component->assertDontSeeHtml('.column.processed_at"')
+        ->toggleAllTableColumns()
+        ->assertCanRenderTableColumn('processed_at')
+        ->assertTableColumnStateSet('processed_at', $processed->processed_at, $processed);
 });

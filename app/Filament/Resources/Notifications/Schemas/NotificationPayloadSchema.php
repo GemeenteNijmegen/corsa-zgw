@@ -18,12 +18,17 @@ class NotificationPayloadSchema
 {
     /**
      * The record action that opens the payload.
+     *
+     * Shown as an icon button with a tooltip, so the actions stay in view next to the columns
+     * on a laptop screen, in the notifications overview as well as in the notifications of a batch.
      */
     public static function action(): Action
     {
         return Action::make('view_payload')
             ->label('Bekijk payload')
             ->icon('heroicon-o-eye')
+            ->iconButton()
+            ->tooltip('Bekijk payload')
             ->modalSubmitAction(false)
             ->modalCancelActionLabel('Sluiten')
             ->schema(self::components());
@@ -37,6 +42,8 @@ class NotificationPayloadSchema
         return Action::make('failed_job')
             ->label('Mislukte job')
             ->icon(Heroicon::OutlinedArrowTopRightOnSquare)
+            ->iconButton()
+            ->tooltip('Mislukte job openen in de job monitor')
             ->color('danger')
             ->url(fn (Notification $record): ?string => $record->failedJobUrl())
             ->openUrlInNewTab()

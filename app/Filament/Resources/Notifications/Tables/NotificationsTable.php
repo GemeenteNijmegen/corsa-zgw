@@ -34,10 +34,13 @@ class NotificationsTable
                     ->label('Type')
                     ->state(fn (Notification $record): string => NotificationPayloadSchema::type($record)),
                 self::statusColumn(),
+                // Hidden by default to keep the actions in view: the status already says whether a
+                // notification is processed, and "Bekijk payload" shows when.
                 TextColumn::make('processed_at')
                     ->label('Verwerkt op')
                     ->dateTime()
                     ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true)
                     ->placeholder('—'),
                 TextColumn::make('batch')
                     ->label('Batch')
