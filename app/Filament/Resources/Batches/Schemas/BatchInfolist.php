@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Batches\Schemas;
 
+use App\Enums\NotificationStatus;
 use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -88,9 +89,11 @@ class BatchInfolist
                                 ->state(fn ($record): ?string => $record->notification['aanmaakdatum'] ?? null)
                                 ->dateTime('d-m-Y H:i:s')
                                 ->placeholder('—'),
-                            IconEntry::make('processed')
-                                ->label('Verwerkt')
-                                ->boolean(),
+                            TextEntry::make('status')
+                                ->label('Status')
+                                ->state(fn ($record): NotificationStatus => $record->status())
+                                ->badge()
+                                ->tooltip(fn ($record): ?string => $record->failure),
                             TextEntry::make('processed_at')
                                 ->label('Verwerkt op')
                                 ->dateTime()

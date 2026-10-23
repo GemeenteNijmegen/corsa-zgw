@@ -2,11 +2,9 @@
 
 namespace App\Filament\Resources\Batches\RelationManagers;
 
-use Filament\Actions\Action;
-use Filament\Infolists\Components\TextEntry;
+use App\Filament\Resources\Notifications\Schemas\NotificationPayloadSchema;
+use App\Filament\Resources\Notifications\Tables\NotificationsTable;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Schemas\Components\Section;
-use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -53,31 +51,15 @@ class NotificationsRelationManager extends RelationManager
                     ->state(fn ($record): ?string => $record->notification['aanmaakdatum'] ?? null)
                     ->dateTime('d-m-Y H:i:s')
                     ->placeholder('—'),
-                IconColumn::make('processed')
-                    ->label('Verwerkt')
-                    ->boolean(),
+                NotificationsTable::statusColumn(),
                 TextColumn::make('processed_at')
                     ->label('Verwerkt op')
                     ->dateTime()
                     ->placeholder('—'),
             ])
             ->recordActions([
-                Action::make('view_payload')
-                    ->label('Bekijk payload')
-                    ->icon('heroicon-o-eye')
-                    ->infolist([
-                        Section::make('Notificatie payload')
-                            ->schema([
-                                TextEntry::make('notification')
-                                    ->label('JSON payload')
-                                    ->state(fn ($record): string => json_encode(
-                                        $record->notification,
-                                        JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE
-                                    ))
-                                    ->fontFamily('mono')
-                                    ->columnSpanFull(),
-                            ]),
-                    ]),
+                NotificationPayloadSchema::action(),
+                NotificationPayloadSchema::failedJobAction(),
             ])
             ->poll('10s');
     }

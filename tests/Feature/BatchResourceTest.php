@@ -1,11 +1,13 @@
 <?php
 
+use App\Enums\NotificationStatus;
 use App\Filament\Resources\Batches\Pages\ListBatches;
 use App\Filament\Resources\Batches\Pages\ViewBatch;
 use App\Filament\Resources\Batches\RelationManagers\NotificationsRelationManager;
 use App\Models\Batch;
 use App\Models\Notification;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Livewire\Livewire;
 
 uses(Illuminate\Foundation\Testing\RefreshDatabase::class);
@@ -136,4 +138,54 @@ test('it renders the relation manager for a processed batch with processed_at', 
         'pageClass' => ViewBatch::class,
     ])
         ->assertSuccessful();
+});
+
+// ─── Status, failed jobs and payload in the notifications of a batch ─────────
+
+test('the notifications of a batch show their status, with a link to a failed job only when there is one', function () {
+    $batch = Batch::factory()->create(['zaak_identificatie' => 'ZAAK-0001']);
+    $failed = Notification::factory()->forZaak()->failed()->create(['batch_id' => $batch->id, 'zaak_identificatie' => 'ZAAK-0001']);
+    $open = Notification::factory()->forResultaat()->create(['batch_id' => $batch->id, 'zaak_identificatie' => 'ZAAK-0001']);
+    $processed = Notification::factory()->processed()->create(['batch_id' => $batch->id, 'zaak_identificatie' => 'ZAAK-0001']);
+
+    Livewire::test(NotificationsRelationManager::class, [
+        'ownerRecord' => $batch,
+        'pageClass' => ViewBatch::class,
+    ])
+        ->assertTableColumnStateSet('status', NotificationStatus::Failed, $failed)
+        ->assertTableColumnStateSet('status', NotificationStatus::Pending, $open)
+        ->assertTableColumnStateSet('status', NotificationStatus::Processed, $processed)
+        ->assertActionVisible(TestAction::make('failed_job')->table($failed))
+        ->assertActionHasUrl(TestAction::make('failed_job')->table($failed), $failed->failedJobUrl())
+        ->assertActionShouldOpenUrlInNewTab(TestAction::make('failed_job')->table($failed))
+        ->assertActionHidden(TestAction::make('failed_job')->table($open))
+        ->assertActionHidden(TestAction::make('failed_job')->table($processed));
+});
+
+test('the notifications of a batch have the same payload view as the notifications overview', function () {
+    $batch = Batch::factory()->create(['zaak_identificatie' => 'ZAAK-0001']);
+    $failed = Notification::factory()->forZaak()->failed()->create(['batch_id' => $batch->id, 'zaak_identificatie' => 'ZAAK-0001']);
+
+    Livewire::test(NotificationsRelationManager::class, [
+        'ownerRecord' => $batch,
+        'pageClass' => ViewBatch::class,
+    ])
+        ->mountAction(TestAction::make('view_payload')->table($failed))
+        ->assertHasNoActionErrors()
+        ->assertMountedActionModalSee('Batch')
+        ->assertMountedActionModalSee('Mislukt')
+        ->assertMountedActionModalSee('ConnectionException: Connection timed out')
+        ->assertMountedActionModalSee('Openen in de job monitor')
+        ->assertMountedActionModalSee($failed->notification['resourceUrl'])
+        ->assertMountedActionModalDontSee('https:\\/\\/', false);
+});
+
+test('the batch page shows the status of each notification', function () {
+    $batch = Batch::factory()->create(['zaak_identificatie' => 'ZAAK-0001']);
+    Notification::factory()->forZaak()->failed()->create(['batch_id' => $batch->id, 'zaak_identificatie' => 'ZAAK-0001']);
+    Notification::factory()->forResultaat()->create(['batch_id' => $batch->id, 'zaak_identificatie' => 'ZAAK-0001']);
+
+    Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])
+        ->assertSee('Mislukt')
+        ->assertSee('Nog niet verwerkt');
 });

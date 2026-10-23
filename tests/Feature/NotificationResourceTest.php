@@ -2,6 +2,7 @@
 
 use App\Enums\NotificationIgnoreReason;
 use App\Enums\NotificationRoute;
+use App\Enums\NotificationStatus;
 use App\Filament\Resources\Batches\BatchResource;
 use App\Filament\Resources\Notifications\NotificationResource;
 use App\Filament\Resources\Notifications\Pages\ListNotifications;
@@ -100,7 +101,7 @@ test('it shows the newest notification first', function () {
         ->assertCanSeeTableRecords([$newest, $middle, $older], inOrder: true);
 });
 
-test('it shows the zaak, the route, the type, whether it is processed and a link to the batch', function () {
+test('it shows the zaak, the route, the type, the status and a link to the batch', function () {
     $direct = createDirectNotification(['zaak_identificatie' => 'ZAAK-0001', 'processed' => true, 'processed_at' => now()]);
     $batch = Batch::factory()->create(['zaak_identificatie' => 'ZAAK-0002']);
     $batched = createBatchNotification(['batch_id' => $batch->id, 'zaak_identificatie' => 'ZAAK-0002']);
@@ -109,10 +110,10 @@ test('it shows the zaak, the route, the type, whether it is processed and a link
         ->assertTableColumnStateSet('zaak_identificatie', 'ZAAK-0001', $direct)
         ->assertTableColumnStateSet('route', NotificationRoute::Direct, $direct)
         ->assertTableColumnStateSet('type', 'create:zaakinformatieobject', $direct)
-        ->assertTableColumnStateSet('processed', true, $direct)
+        ->assertTableColumnStateSet('status', NotificationStatus::Processed, $direct)
         ->assertTableColumnStateSet('batch', null, $direct)
         ->assertTableColumnStateSet('route', NotificationRoute::Batch, $batched)
-        ->assertTableColumnStateSet('processed', false, $batched)
+        ->assertTableColumnStateSet('status', NotificationStatus::Pending, $batched)
         ->assertTableColumnStateSet('batch', 'Bekijk batch', $batched)
         ->assertSee(BatchResource::getUrl('view', ['record' => $batch->id]));
 });
@@ -141,17 +142,21 @@ test('it can filter notifications by route', function (NotificationRoute $route)
         ->assertCanNotSeeTableRecords([$hidden]);
 })->with([NotificationRoute::Direct, NotificationRoute::Batch]);
 
-test('it can filter notifications on whether they are processed', function () {
+test('it can filter notifications on their status', function () {
     $processed = createDirectNotification(['processed' => true, 'processed_at' => now()]);
+    $failed = Notification::factory()->direct()->failed()->create();
     $open = createDirectNotification();
 
     Livewire::test(ListNotifications::class)
-        ->filterTable('processed', false)
+        ->filterTable('status', NotificationStatus::Pending->value)
         ->assertCanSeeTableRecords([$open])
-        ->assertCanNotSeeTableRecords([$processed])
-        ->filterTable('processed', true)
+        ->assertCanNotSeeTableRecords([$processed, $failed])
+        ->filterTable('status', NotificationStatus::Failed->value)
+        ->assertCanSeeTableRecords([$failed])
+        ->assertCanNotSeeTableRecords([$processed, $open])
+        ->filterTable('status', NotificationStatus::Processed->value)
         ->assertCanSeeTableRecords([$processed])
-        ->assertCanNotSeeTableRecords([$open]);
+        ->assertCanNotSeeTableRecords([$open, $failed]);
 });
 
 test('it can filter notifications by zaak', function () {
@@ -192,7 +197,7 @@ test('the view action shows the route and the stored payload including the kenme
         ->assertMountedActionModalSee('Direct')
         ->assertMountedActionModalSee('bronorganisatie')
         ->assertMountedActionModalSee($notification->notification['resourceUrl'])
-        ->assertMountedActionModalSee('02-01-2026 10:00:00');
+        ->assertMountedActionModalSee('2, 2026 11:00:00');
 });
 
 // ─── Read-only ───────────────────────────────────────────────────────────────
@@ -204,9 +209,14 @@ test('the notifications overview offers no actions that change anything', functi
     $table = $component->instance()->getTable();
 
     expect(array_keys(NotificationResource::getPages()))->toBe(['index'])
-        ->and(array_keys($table->getFlatActions()))->toBe(['view_payload'])
+        ->and(array_keys($table->getFlatActions()))->toBe(['view_payload', 'failed_job'])
         ->and($table->getToolbarActions())->toBe([])
         ->and($table->getHeaderActions())->toBe([]);
+
+    // The failed job action only links to the job monitor.
+    $failed = Notification::factory()->direct()->failed()->create();
+    Livewire::test(ListNotifications::class)
+        ->assertActionHasUrl(TestAction::make('failed_job')->table($failed), $failed->failedJobUrl());
 
     $component
         ->assertActionDoesNotExist('create')
@@ -225,4 +235,54 @@ test('the route badge has the same colour in the table and in the view action', 
 
     $component->mountAction(TestAction::make('view_payload')->table($notification));
     expect($component->getMountedActionModalHtml())->toMatch($directBadge);
+});
+
+// ─── Status and failed jobs ──────────────────────────────────────────────────
+
+test('a notification that is not processed yet is shown as such and not as failed', function () {
+    $open = createDirectNotification();
+
+    Livewire::test(ListNotifications::class)
+        ->assertTableColumnStateSet('status', NotificationStatus::Pending, $open)
+        ->assertSee('Nog niet verwerkt')
+        ->assertActionHidden(TestAction::make('failed_job')->table($open));
+
+    expect(NotificationStatus::Pending->getColor())->toBe('gray')
+        ->and(NotificationStatus::Pending->getIcon())->toBe('heroicon-o-clock')
+        ->and(NotificationStatus::Failed->getColor())->toBe('danger');
+});
+
+test('a failed notification links to its failed job in a new tab and shows the failure', function () {
+    $failed = Notification::factory()->direct()->failed()->create(['failure' => 'RequestException: HTTP 503']);
+
+    Livewire::test(ListNotifications::class)
+        ->assertTableColumnStateSet('status', NotificationStatus::Failed, $failed)
+        ->assertSee('Mislukt')
+        ->assertSee('RequestException: HTTP 503')
+        ->assertActionVisible(TestAction::make('failed_job')->table($failed))
+        ->assertActionHasUrl(TestAction::make('failed_job')->table($failed), $failed->failedJobUrl())
+        ->assertActionShouldOpenUrlInNewTab(TestAction::make('failed_job')->table($failed));
+});
+
+test('a failed notification without a job id shows the failure but no link', function () {
+    $failed = Notification::factory()->direct()->failed()->create(['failed_job_id' => null]);
+
+    Livewire::test(ListNotifications::class)
+        ->assertTableColumnStateSet('status', NotificationStatus::Failed, $failed)
+        ->assertActionHidden(TestAction::make('failed_job')->table($failed))
+        ->mountAction(TestAction::make('view_payload')->table($failed))
+        ->assertMountedActionModalSee('ConnectionException: Connection timed out')
+        ->assertMountedActionModalDontSee('Openen in de job monitor');
+});
+
+test('the view action of a failed notification shows the failure and links to the failed job', function () {
+    $failed = Notification::factory()->direct()->failed()->create();
+
+    Livewire::test(ListNotifications::class)
+        ->mountAction(TestAction::make('view_payload')->table($failed))
+        ->assertMountedActionModalSee('Mislukt')
+        ->assertMountedActionModalSee('ConnectionException: Connection timed out')
+        ->assertMountedActionModalSee('Openen in de job monitor')
+        ->assertMountedActionModalSeeHtml('href="'.e($failed->failedJobUrl()).'"')
+        ->assertMountedActionModalSeeHtml('target="_blank"');
 });
