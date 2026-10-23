@@ -9025,16 +9025,16 @@
         },
         {
             "name": "woweb/laravel-zaakdms",
-            "version": "v1.0.0",
+            "version": "v1.0.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/WowebNL/laravel-zaakdms.git",
-                "reference": "f3b0796cd7c7a8b4090107bb8f7c7d429b817c15"
+                "reference": "57bff2b175f3ad99265886bead4187d4042e37ef"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/WowebNL/laravel-zaakdms/zipball/f3b0796cd7c7a8b4090107bb8f7c7d429b817c15",
-                "reference": "f3b0796cd7c7a8b4090107bb8f7c7d429b817c15",
+                "url": "https://api.github.com/repos/WowebNL/laravel-zaakdms/zipball/57bff2b175f3ad99265886bead4187d4042e37ef",
+                "reference": "57bff2b175f3ad99265886bead4187d4042e37ef",
                 "shasum": ""
             },
             "require-dev": {
@@ -9075,10 +9075,10 @@
             ],
             "description": "A laravel wrapper for the Zaak- en Documentservices 1.1 (Soap)",
             "support": {
-                "source": "https://github.com/WowebNL/laravel-zaakdms/tree/v1.0.0",
+                "source": "https://github.com/WowebNL/laravel-zaakdms/tree/v1.0.1",
                 "issues": "https://github.com/WowebNL/laravel-zaakdms/issues"
             },
-            "time": "2026-10-23T13:15:52+00:00"
+            "time": "2026-10-23T13:46:45+00:00"
         },
         {
             "name": "woweb/laravel-zgw-client",
