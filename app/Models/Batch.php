@@ -188,31 +188,10 @@ class Batch extends Model
     }
 
     /**
-     * Get notifications sorted by type and creation date
+     * Get the notifications in the order the batch processes them (see Notification::processingGroup()).
      */
     public function getNotificationsSorted(): \Illuminate\Database\Eloquent\Collection
     {
-        $notifications = $this->notifications()
-            ->get()
-            ->sortBy(function (Model $notification) {
-                // 'create' (zaak aangemaakt) should come first
-                /** @var \App\Models\Notification $notification */
-                $actie = $notification->notification['actie'] ?? '';
-                $resource = $notification->notification['resource'] ?? '';
-                if ($actie === 'create' && $resource === 'zaak') {
-                    return 0;
-                }
-
-                // Resultaat must always be last
-                if ($actie === 'create' && $resource === 'resultaat') {
-                    return 2;
-                }
-
-                // Other notifications can be processed in the order they arrived
-                return 1;
-            })
-            ->values();
-
-        return $notifications;
+        return $this->notifications()->inProcessingOrder()->get();
     }
 }

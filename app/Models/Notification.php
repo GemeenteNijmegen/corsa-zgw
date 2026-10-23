@@ -6,6 +6,7 @@ use App\Enums\NotificationIgnoreReason;
 use App\Enums\NotificationRoute;
 use App\Enums\NotificationStatus;
 use App\Support\FailureDescription;
+use App\ValueObjects\OpenNotification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -144,6 +145,49 @@ class Notification extends Model
     {
         return $query->whereNotNull('ignored_at')
             ->when($reason, fn (Builder $query) => $query->where('ignored_reason', $reason));
+    }
+
+    /**
+     * The group in which a batch processes this notification: the zaak first, then the other
+     * notifications, then changes to documents (after the links that add them), and the resultaat
+     * last (after which the zaak may be closed).
+     */
+    public static function processingGroup(?string $actie, ?string $resource): int
+    {
+        return match (true) {
+            $actie === 'create' && $resource === 'zaak' => 0,
+            OpenNotification::isDocumentUpdateAction($actie, $resource) => 2,
+            $actie === 'create' && $resource === 'resultaat' => 3,
+            default => 1,
+        };
+    }
+
+    /**
+     * Order notifications the way a batch processes them: by processingGroup(), and within a group
+     * in the order they were received.
+     *
+     * @param  Builder<Notification>  $query
+     * @return Builder<Notification>
+     */
+    public function scopeInProcessingOrder(Builder $query): Builder
+    {
+        // Let the query grammar write the JSON paths, so the order also holds on PostgreSQL,
+        // where the MySQL style path '$.actie' does not match.
+        $grammar = $query->getQuery()->getGrammar();
+        $actie = $grammar->wrap('notification->actie');
+        $resource = $grammar->wrap('notification->resource');
+
+        return $query
+            ->orderByRaw(
+                "CASE
+                    WHEN {$actie} = 'create' AND {$resource} = 'zaak' THEN 0
+                    WHEN {$actie} IN ('update', 'partial_update') AND {$resource} = 'enkelvoudiginformatieobject' THEN 2
+                    WHEN {$actie} = 'create' AND {$resource} = 'resultaat' THEN 3
+                    ELSE 1
+                END ASC"
+            )
+            ->orderBy('created_at')
+            ->orderBy('id');
     }
 
     /**

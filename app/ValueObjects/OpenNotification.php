@@ -6,11 +6,16 @@ use Illuminate\Contracts\Support\Arrayable;
 
 final readonly class OpenNotification implements Arrayable
 {
-    /** The kanaal this application processes. */
-    public const SUPPORTED_KANAAL = 'zaken';
+    /**
+     * The kanalen this application processes.
+     *
+     * @var list<string>
+     */
+    public const SUPPORTED_KANALEN = ['zaken', 'documenten'];
 
     /**
-     * The actie:resource combinations on the supported kanaal that this application processes.
+     * The actie:resource combinations on the supported kanalen that this application processes.
+     * The resource names differ per kanaal, so one list covers both.
      *
      * @var list<string>
      */
@@ -19,6 +24,17 @@ final readonly class OpenNotification implements Arrayable
         'create:status',
         'create:zaakinformatieobject',
         'create:resultaat',
+        ...self::DOCUMENT_UPDATE_ACTIONS,
+    ];
+
+    /**
+     * The changes to a document (PUT and PATCH) that are sent to the document management system.
+     *
+     * @var list<string>
+     */
+    public const DOCUMENT_UPDATE_ACTIONS = [
+        'update:enkelvoudiginformatieobject',
+        'partial_update:enkelvoudiginformatieobject',
     ];
 
     /** @var array<string, string|null> */
@@ -41,7 +57,20 @@ final readonly class OpenNotification implements Arrayable
 
     public function isSupportedKanaal(): bool
     {
-        return $this->kanaal === self::SUPPORTED_KANAAL;
+        return in_array($this->kanaal, self::SUPPORTED_KANALEN, true);
+    }
+
+    /**
+     * A change to a document. Its hoofdObject is the document, not a zaak.
+     */
+    public function isDocumentUpdate(): bool
+    {
+        return self::isDocumentUpdateAction($this->actie, $this->resource);
+    }
+
+    public static function isDocumentUpdateAction(?string $actie, ?string $resource): bool
+    {
+        return in_array("{$actie}:{$resource}", self::DOCUMENT_UPDATE_ACTIONS, true);
     }
 
     public function isSupportedAction(): bool

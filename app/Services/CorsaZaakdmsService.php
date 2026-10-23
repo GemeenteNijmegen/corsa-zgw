@@ -10,12 +10,16 @@ use App\Models\ZaaktypeMapping;
 use App\Services\Zgw\ZgwReader;
 use App\ValueObjects\ZGW\Zaak;
 use Carbon\Carbon;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
+use SimpleXMLElement;
+use Throwable;
 use Woweb\Zaakdms\Helper;
 use Woweb\Zaakdms\Zaakdms;
 
@@ -312,25 +316,14 @@ class CorsaZaakdmsService
             : $this->writeTempDocument($bestandsnaam, $content, $notification);
 
         try {
-            $options = [
-                'identificatie' => $documentIdentificatie,
-                'documenttype' => $documentTypeData['omschrijving']
-                    ?? $documentTypeData['omschrijvingGeneriek']
-                    ?? 'Onbekend',
-                'creatiedatum' => $this->formatZaakdmsDate($documentData['creatiedatum'] ?? null),
-                'ontvangstdatum' => $this->formatZaakdmsDate($documentData['ontvangstdatum'] ?? null),
-                'verzenddatum' => $this->formatZaakdmsDate($documentData['verzenddatum'] ?? null),
-                'status' => $documentData['status'] ?? null,
-                'titel' => $documentData['titel'] ?? $bestandsnaam,
-                'beschrijving' => $documentData['beschrijving'] ?? null,
-                'auteur' => $documentData['auteur'] ?? self::DEFAULT_AUTEUR,
-                'vertrouwelijkAanduiding' => $this->mapVertrouwelijkAanduiding($documentData),
-                'file' => $tempPath,
-                'disk' => self::TEMP_DISK,
-                'zaak' => [
-                    'identificatie' => $notification->zaak_identificatie,
-                ],
-            ];
+            $options = $this->mapDocumentOptions(
+                $documentData,
+                $documentTypeData,
+                $documentIdentificatie,
+                $bestandsnaam,
+                $tempPath,
+                $notification->zaak_identificatie,
+            );
 
             $reference = $this->zaakdms->voegZaakdocumentToe($options);
 
@@ -351,6 +344,215 @@ class CorsaZaakdmsService
         $this->recordDocumentSync($sync, $documentUrl, $notification, $documentIdentificatie, $documentData, $placeholder);
 
         return DocumentSyncOutcome::Added;
+    }
+
+    /**
+     * Send the newest version of a changed document to the document management system.
+     *
+     * Used by the direct route and by the batch route, for an update or partial_update on
+     * enkelvoudiginformatieobject. Nothing is sent when the document management system already has
+     * this version, when the content is still being uploaded in parts, when the document is still
+     * being edited without content (the placeholder stays), or when the document is not in the
+     * document management system yet. The caller decides what to do with the last two.
+     */
+    public function updateDocument(Notification $notification): DocumentSyncOutcome
+    {
+        $documentUrl = $notification->notification['resourceUrl']
+            ?? $notification->notification['hoofdObject']
+            ?? null;
+
+        if (! $documentUrl) {
+            Log::warning('Missing document url for document update', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $notification->zaak_identificatie,
+            ]);
+            throw new RuntimeException('Missing document url for document update');
+        }
+
+        // The same lock as for adding a document, so an update never overlaps with the add of the
+        // same document or with another update of it.
+        $lock = Cache::lock(self::documentLockKey($documentUrl), self::DOCUMENT_LOCK_SECONDS);
+
+        if (! $lock->get()) {
+            Log::info('Document is being sent by another job, trying again later', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $notification->zaak_identificatie,
+            ]);
+
+            throw new DocumentLockedException;
+        }
+
+        try {
+            return $this->sendDocumentUpdate($notification, $documentUrl);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Check the version, the upload and the register, send the update and register it. Runs while
+     * holding the lock for the document.
+     */
+    private function sendDocumentUpdate(Notification $notification, string $documentUrl): DocumentSyncOutcome
+    {
+        // Without a version the newest one is returned.
+        $documentData = $this->zgw->get($documentUrl);
+        $versie = isset($documentData['versie']) ? (int) $documentData['versie'] : null;
+        $sync = DocumentSync::where('document_url', $documentUrl)->first();
+
+        if ($sync && $sync->versie !== null && $versie !== null && $versie <= $sync->versie) {
+            Log::info('Document version already in Corsa, skipping', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $sync->zaak_identificatie,
+                'versie' => $versie,
+                'registered_versie' => $sync->versie,
+            ]);
+
+            return DocumentSyncOutcome::AlreadyUpToDate;
+        }
+
+        if (! empty($documentData['bestandsdelen'] ?? [])) {
+            Log::info('Document content is still being uploaded, trying again later', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $notification->zaak_identificatie,
+            ]);
+
+            return DocumentSyncOutcome::UploadIncomplete;
+        }
+
+        $zaakIdentificatie = $sync->zaak_identificatie ?? $notification->zaak_identificatie;
+        $documentIdentificatie = $sync->corsa_identificatie
+            ?? $documentData['identificatie']
+            ?? $documentData['uuid']
+            ?? null;
+
+        if (! $sync && (! $documentIdentificatie || ! $this->isDocumentListedInCorsa($zaakIdentificatie, $documentIdentificatie, $notification))) {
+            Log::info('Document not in Corsa yet for document update', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $zaakIdentificatie,
+            ]);
+
+            return DocumentSyncOutcome::DocumentNotInCorsa;
+        }
+
+        $inhoudUrl = $documentData['inhoud'] ?? null;
+        $content = $inhoudUrl ? $this->downloadDocument($inhoudUrl, $notification) : '';
+
+        if ($content === '') {
+            if ($this->mayUsePlaceholder($documentData)) {
+                // Still being edited without content: what is in Corsa (the placeholder) stays.
+                Log::info('Document has no content yet, keeping what is in Corsa', [
+                    'notification_id' => $notification->id,
+                    'zaak_identificatie' => $zaakIdentificatie,
+                    'document_identificatie' => $documentIdentificatie,
+                ]);
+
+                return DocumentSyncOutcome::PlaceholderKept;
+            }
+
+            Log::warning('Document content is empty or missing for document update', [
+                'notification_id' => $notification->id,
+                'document_url' => $documentUrl,
+            ]);
+            throw new RuntimeException($inhoudUrl ? 'Document content is empty' : 'Missing inhoud url for document download');
+        }
+
+        $documentTypeData = $this->resolveDocumentType($documentData);
+
+        $bestandsnaam = $documentData['bestandsnaam']
+            ?? $documentData['titel']
+            ?? ('document-'.$documentIdentificatie.'.bin');
+
+        $tempPath = $this->writeTempDocument($bestandsnaam, $content, $notification);
+
+        try {
+            $reference = $this->zaakdms->updateZaakDocument(
+                $this->mapDocumentOptions($documentData, $documentTypeData, $documentIdentificatie, $bestandsnaam, $tempPath, $zaakIdentificatie)
+            );
+
+            Log::info('Corsa document update done', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $zaakIdentificatie,
+                'document_identificatie' => $documentIdentificatie,
+                'versie' => $versie,
+                'corsa_reference' => $reference,
+            ]);
+        } finally {
+            Storage::disk(self::TEMP_DISK)->delete($tempPath);
+        }
+
+        DocumentSync::updateOrCreate(
+            ['document_url' => $documentUrl],
+            [
+                'zaak_identificatie' => $zaakIdentificatie,
+                'corsa_identificatie' => $documentIdentificatie,
+                'versie' => $versie,
+                'placeholder' => false,
+                'synced_at' => now(),
+            ],
+        );
+
+        return DocumentSyncOutcome::Updated;
+    }
+
+    /**
+     * Whether the list of documents of the zaak in the document management system contains a
+     * document with this identificatie. Only used for a document without a register entry, such as
+     * one that was added before the register existed.
+     *
+     * The list (geefLijstZaakdocumenten) returns the zaak object; each document is a related object
+     * under heeftRelevant, with its identificatie under gerelateerde. That shape follows existing code
+     * that reads this list from the same client, and the inverse relation isRelevantVoor in the
+     * update message; it is not confirmed against a test environment yet.
+     *
+     * A connection error or a server error is passed on, so it is tried again. Any other error,
+     * such as a fault message because the zaak is not there, counts as "not listed".
+     */
+    public function isDocumentListedInCorsa(string $zaakIdentificatie, string $documentIdentificatie, Notification $notification): bool
+    {
+        try {
+            $zaakObject = $this->zaakdms->geefLijstZaakdocumenten($zaakIdentificatie);
+        } catch (ConnectionException|RequestException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            Log::info('Could not list the documents of the zaak in Corsa, treating the document as not listed', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $zaakIdentificatie,
+                'error' => get_class($e),
+            ]);
+
+            return false;
+        }
+
+        foreach (self::listedDocumentIdentificaties($zaakObject) as $identificatie) {
+            if ($identificatie === $documentIdentificatie) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The identificaties of the documents in the zaak object of a geefLijstZaakdocumenten answer,
+     * with the namespace prefixes removed as the client does (zkn:heeftRelevant becomes
+     * zknheeftRelevant).
+     *
+     * @return list<string>
+     */
+    public static function listedDocumentIdentificaties(SimpleXMLElement $zaakObject): array
+    {
+        $identificaties = [];
+
+        foreach ($zaakObject->zknheeftRelevant as $relevant) {
+            $identificatie = trim((string) $relevant->zkngerelateerde->zknidentificatie);
+
+            if ($identificatie !== '') {
+                $identificaties[] = $identificatie;
+            }
+        }
+
+        return $identificaties;
     }
 
     public function processResultaatAangemaakt(Notification $notification): void
@@ -409,6 +611,41 @@ class CorsaZaakdmsService
             'einddatum' => $einddatum,
             'corsa_reference' => $reference,
         ]);
+    }
+
+    /**
+     * The options for adding or updating a document in the document management system. The same
+     * for both, so an update sends the same metadata as the add.
+     *
+     * @return array<string, mixed>
+     */
+    private function mapDocumentOptions(
+        array $documentData,
+        array $documentTypeData,
+        string $documentIdentificatie,
+        string $bestandsnaam,
+        string $tempPath,
+        string $zaakIdentificatie,
+    ): array {
+        return [
+            'identificatie' => $documentIdentificatie,
+            'documenttype' => $documentTypeData['omschrijving']
+                ?? $documentTypeData['omschrijvingGeneriek']
+                ?? 'Onbekend',
+            'creatiedatum' => $this->formatZaakdmsDate($documentData['creatiedatum'] ?? null),
+            'ontvangstdatum' => $this->formatZaakdmsDate($documentData['ontvangstdatum'] ?? null),
+            'verzenddatum' => $this->formatZaakdmsDate($documentData['verzenddatum'] ?? null),
+            'status' => $documentData['status'] ?? null,
+            'titel' => $documentData['titel'] ?? $bestandsnaam,
+            'beschrijving' => $documentData['beschrijving'] ?? null,
+            'auteur' => $documentData['auteur'] ?? self::DEFAULT_AUTEUR,
+            'vertrouwelijkAanduiding' => $this->mapVertrouwelijkAanduiding($documentData),
+            'file' => $tempPath,
+            'disk' => self::TEMP_DISK,
+            'zaak' => [
+                'identificatie' => $zaakIdentificatie,
+            ],
+        ];
     }
 
     private function fetchZaak(string $zaakUrl): Zaak

@@ -24,6 +24,12 @@ enum NotificationIgnoreReason: string implements HasLabel
     /** The zaak has a zaaktype whose mapping is not active. */
     case InactiveZaaktype = 'inactive_zaaktype';
 
+    /** A change to a document that is not linked to any zaak. A later link sends the newest version. */
+    case DocumentNotLinked = 'document_not_linked';
+
+    /** A change to a document that is linked to more than one zaak with an active mapping. */
+    case DocumentInMultipleZaken = 'document_in_multiple_zaken';
+
     /**
      * Readable label for the admin panel. The stored values above stay unchanged.
      */
@@ -34,6 +40,8 @@ enum NotificationIgnoreReason: string implements HasLabel
             self::UnsupportedAction => 'Actie niet verwerkt',
             self::UnknownZaaktype => 'Zaaktype zonder mapping',
             self::InactiveZaaktype => 'Mapping zaaktype niet actief',
+            self::DocumentNotLinked => 'Document niet aan een zaak gekoppeld',
+            self::DocumentInMultipleZaken => 'Document aan meerdere zaken gekoppeld',
         };
     }
 }
