@@ -423,19 +423,7 @@ test('the direct job fails without a retry on a permanent error', function (Clos
     )],
 ]);
 
-test('the direct job fails on the last attempt of a temporary error', function () {
-    fakeDirectApis(directDocument());
-    $zaakdms = $this->mock(Zaakdms::class);
-    $zaakdms->shouldReceive('geefZaakDetails')->andReturn(corsaDirectZaakDetails());
-    $zaakdms->shouldReceive('voegZaakdocumentToe')->once()->andThrow(new ConnectionException('timed out'));
-
-    $job = (new ProcessDocumentDirectly(makeDirectNotification()))->withFakeQueueInteractions();
-    $job->job->attempts = 4;
-
-    $job->handle(app(CorsaZaakdmsService::class), app(BatchingService::class));
-
-    $job->assertFailed();
-});
+// The fourth temporary error failing the job is covered under the queue worker in QueueWorkerTest.
 
 test('the direct job runs on the direct queue with three retries after 30 seconds, 2 minutes and 5 minutes', function () {
     $job = new ProcessDocumentDirectly(makeDirectNotification());
@@ -755,13 +743,14 @@ test('the lock for a document is released when sending it fails', function () {
     expect(Cache::lock(CorsaZaakdmsService::documentLockKey(DIRECT_EIO_URL), 1)->get())->toBeTrue();
 });
 
-test('waiting for the lock does not use up the retries of either job', function () {
+test('both jobs are configured to wait for the lock without counting it as an error', function () {
     $this->freezeTime();
     $direct = new ProcessDocumentDirectly(makeDirectNotification());
     $batch = new HandleNotification(makeDirectNotification());
 
     expect($direct->retryUntil()->getTimestamp())->toBe(now()->addMinutes(ProcessDocumentDirectly::RETRY_MINUTES)->getTimestamp())
         ->and(property_exists($direct, 'tries'))->toBeFalse()
+        ->and($direct->maxExceptions)->toBe(ProcessDocumentDirectly::ERROR_ATTEMPTS)
         ->and($batch->tries)->toBe(20)
         ->and($batch->maxExceptions)->toBe(1)
         ->and($batch->failOnTimeout)->toBeTrue()

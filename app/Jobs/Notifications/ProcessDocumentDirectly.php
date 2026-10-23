@@ -39,6 +39,12 @@ class ProcessDocumentDirectly implements ShouldQueue
     public const ERROR_ATTEMPTS = 4;
 
     /**
+     * The worker fails the job at the fourth temporary error. It counts thrown exceptions only,
+     * not releases, so waiting for the lock of another job does not use up these retries.
+     */
+    public int $maxExceptions = self::ERROR_ATTEMPTS;
+
+    /**
      * Seconds to wait before trying again while another job is sending the same document.
      */
     public const LOCK_RETRY_SECONDS = 15;
@@ -108,8 +114,9 @@ class ProcessDocumentDirectly implements ShouldQueue
 
             return;
         } catch (Throwable $e) {
-            if ($this->isTemporary($e) && $this->attempts() < self::ERROR_ATTEMPTS) {
-                Log::warning('Temporary error while processing document directly, retrying', [
+            if ($this->isTemporary($e)) {
+                // The worker retries this until the fourth temporary error ($maxExceptions).
+                Log::warning('Temporary error while processing document directly', [
                     'notification_id' => $this->notification->id,
                     'attempt' => $this->attempts(),
                     'error' => get_class($e),
