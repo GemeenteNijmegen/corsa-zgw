@@ -13,7 +13,7 @@ The application handles four types of notifications:
 
 A cache-based timer groups all notifications for a single case that arrive within a configurable window. When the timer expires, notifications are processed as an ordered job chain via Laravel's `Bus::chain()`, guaranteeing that `create:zaak` always runs first.
 
-For a detailed description of the batching logic and processing order, see [docs/batching_system.md](docs/batching_system.md) and [docs/notificaties.md](docs/notificaties.md).
+For a detailed description of the batching logic and processing order, see [docs/batching_system.md](docs/batching_system.md) and [docs/notificaties.md](docs/notificaties.md). To reprocess failed notifications, see [docs/herstarten-notificaties.md](docs/herstarten-notificaties.md).
 
 ## Architecture
 
