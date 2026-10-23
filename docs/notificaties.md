@@ -50,11 +50,12 @@ Elke notificatie heeft een route: `batch` (standaard) of `direct`.
 Een `create:zaakinformatieobject` waarvan het gekoppelde document de status `in_bewerking` heeft, wacht niet op de batch van de zaak. Bij binnenkomst haalt de applicatie de koppeling en het document op om de status te lezen. Bij elke andere status, of als het document niet op te halen is, gaat de notificatie zoals altijd de batch in. Een notificatie op de directe route komt niet in een batch; de job `ProcessDocumentDirectly` verwerkt hem op de queue `direct`:
 - Staat de zaak al in Corsa, dan gaat het document er meteen in.
 - Staat de zaak nog niet in Corsa, dan gaat de notificatie de batch van de zaak in (de route wordt `batch`). De batch maakt eerst de zaak aan.
-- Een verbindingsfout, time-out, 429 of serverfout wordt opnieuw geprobeerd na 30 seconden, 2 minuten en 5 minuten. Elke andere fout laat de job meteen mislukken. Een mislukte job is zichtbaar in Horizon; de notificatie blijft onverwerkt.
+- Een verbindingsfout, time-out (408), 429 of serverfout bij het ophalen uit de ZGW API's of bij het toevoegen van het document aan Corsa wordt opnieuw geprobeerd na 30 seconden, 2 minuten en 5 minuten. Elke andere fout laat de job meteen mislukken. Een mislukte job is zichtbaar in Horizon; de notificatie blijft onverwerkt.
+- Een fout bij de controle of de zaak in Corsa staat, telt als "zaak niet in Corsa": de notificatie gaat zonder herhaling de batch in.
 
-Elk document dat naar Corsa gaat, via welke route ook, komt in de tabel `document_syncs`: de URL van het document, de zaak, de identificatie die naar Corsa ging, de `versie` en of er een placeholder is gestuurd. Staat een document daar al voor dezelfde zaak, dan wordt het niet nog eens gestuurd. Zo voegt een notificatie die twee keer binnenkomt het document niet twee keer toe.
+Elk document dat naar Corsa gaat, via welke route ook, komt in de tabel `document_syncs`: de URL van het document, de zaak, de identificatie die naar Corsa ging, de `versie` en of er een placeholder is gestuurd. Staat een document daar al voor dezelfde zaak, dan wordt het niet nog eens gestuurd. Zo voegt een notificatie die twee keer binnenkomt het document niet twee keer toe, zolang de twee verwerkingen niet precies tegelijk lopen.
 
-Een document met status `in_bewerking` zonder inhoud (geen `inhoud`, of een lege download) en zonder `bestandsdelen` gaat als klein tekstbestand met de tekst "Tijdelijk bestand" naar Corsa. Elk ander document zonder inhoud blijft geweigerd.
+Een document met status `in_bewerking` zonder inhoud (geen `inhoud`, of een lege download) en zonder `bestandsdelen` gaat als klein tekstbestand met de tekst "Tijdelijk bestand" naar Corsa. Dat geldt op beide routes, dus ook voor zo'n document dat in een batch terechtkomt. Elk ander document zonder inhoud blijft geweigerd. De placeholder vervangen door de echte inhoud vraagt verwerking van documentwijzigingen, en die is nog niet gebouwd: tot dan blijft de placeholder in Corsa staan.
 
 ## Afhandeling
 Van elke batch wordt een 'job chain' gedefinieerd in de applicatie (Laravel). 

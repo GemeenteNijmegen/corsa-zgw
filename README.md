@@ -82,11 +82,12 @@ A `create:zaakinformatieobject` notification for a document with status `in_bewe
 
 - When the zaak is in Corsa, the document is added to it right away.
 - When the zaak is not in Corsa yet, the notification moves to the batch of the zaak (its route becomes `batch`), so the zaak is created first.
-- A connection error, a time-out, rate limiting (429) or a server error is retried after 30 seconds, 2 minutes and 5 minutes. Any other error fails the job right away. A failed job stays visible in Horizon, and the notification stays unprocessed.
+- A connection error, a time-out (408), rate limiting (429) or a server error while fetching from the ZGW APIs or adding the document to Corsa is retried after 30 seconds, 2 minutes and 5 minutes. Any other error fails the job right away. A failed job stays visible in Horizon, and the notification stays unprocessed.
+- An error while checking whether the zaak is in Corsa counts as "not in Corsa": the notification moves to the batch without a retry.
 
-Every document that is sent to Corsa, on either route, is recorded in `document_syncs` (document URL, zaak, the identificatie sent to Corsa, `versie`, and whether a placeholder was sent). A document that is already recorded for the same zaak is not sent again, so a notification that is delivered twice does not add the document twice.
+Every document that is sent to Corsa, on either route, is recorded in `document_syncs` (document URL, zaak, the identificatie sent to Corsa, `versie`, and whether a placeholder was sent). A document that is already recorded for the same zaak is not sent again, so a notification that is delivered twice does not add the document twice, as long as the two deliveries are not processed at the same moment.
 
-A document with status `in_bewerking` that has no content yet (no `inhoud`, or an empty download) and no `bestandsdelen` is sent to Corsa as a small placeholder text file. Any other document without content is still refused.
+A document with status `in_bewerking` that has no content yet (no `inhoud`, or an empty download) and no `bestandsdelen` is sent to Corsa as a small placeholder text file. This applies on both routes, so it also covers such a document that ends up in a batch. Any other document without content is still refused. Replacing a placeholder with the real content needs processing of document changes, which is not built yet: until then a placeholder stays in Corsa.
 
 ## Technical Stack
 
