@@ -2,20 +2,20 @@
 
 namespace App\Filament\Resources\Batches\Schemas;
 
-use App\Enums\NotificationStatus;
 use Filament\Infolists\Components\IconEntry;
-use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
-use Illuminate\Support\Collection;
 
 class BatchInfolist
 {
     public static function configure(Schema $schema): Schema
     {
         return $schema->components([
+            // Full width, so the notifications of the batch (the relation manager) follow below it as
+            // a table with room for every column and the record actions.
             Section::make('Batch details')
+                ->columnSpanFull()
                 ->columns(2)
                 ->schema([
                     TextEntry::make('zaak_identificatie')
@@ -44,62 +44,6 @@ class BatchInfolist
                         ->label('Vergrendeld')
                         ->state(fn ($record): bool => $record->isLocked())
                         ->boolean(),
-                ]),
-
-            Section::make('Notificaties')
-                ->schema([
-                    RepeatableEntry::make('notifications')
-                        ->label('')
-                        ->state(fn ($record): Collection => $record->notifications()
-                            ->get()
-                            ->sortBy(function ($notification): int {
-                                $actie = $notification->notification['actie'] ?? '';
-                                $resource = $notification->notification['resource'] ?? '';
-
-                                return match ("{$actie}:{$resource}") {
-                                    'create:zaak' => 0,
-                                    'create:resultaat' => 2,
-                                    default => 1,
-                                };
-                            })
-                            ->values()
-                        )
-                        ->schema([
-                            TextEntry::make('volgorde')
-                                ->label('Volgorde')
-                                ->state(function ($record): string {
-                                    $actie = $record->notification['actie'] ?? '';
-                                    $resource = $record->notification['resource'] ?? '';
-
-                                    return match ("{$actie}:{$resource}") {
-                                        'create:zaak' => '0',
-                                        'create:resultaat' => '2',
-                                        default => '1',
-                                    };
-                                }),
-                            TextEntry::make('type')
-                                ->label('Type')
-                                ->state(fn ($record): string => sprintf(
-                                    '%s:%s',
-                                    $record->notification['actie'] ?? '—',
-                                    $record->notification['resource'] ?? '—'
-                                )),
-                            TextEntry::make('aanmaakdatum')
-                                ->label('Aangemaakt')
-                                ->state(fn ($record): ?string => $record->notification['aanmaakdatum'] ?? null)
-                                ->dateTime('d-m-Y H:i:s')
-                                ->placeholder('—'),
-                            TextEntry::make('status')
-                                ->label('Status')
-                                ->state(fn ($record): NotificationStatus => $record->status())
-                                ->badge()
-                                ->tooltip(fn ($record): ?string => $record->failure),
-                            TextEntry::make('processed_at')
-                                ->label('Verwerkt op')
-                                ->dateTime()
-                                ->placeholder('—'),
-                        ])
-                        ->columns(5),
                 ]),
         ]);
     }

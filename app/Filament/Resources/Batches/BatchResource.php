@@ -34,7 +34,7 @@ class BatchResource extends Resource
         return BatchesTable::configure($table);
     }
 
-    public static function getRelationManagers(): array
+    public static function getRelations(): array
     {
         return [
             NotificationsRelationManager::class,

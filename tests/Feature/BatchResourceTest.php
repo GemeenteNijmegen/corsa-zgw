@@ -4,10 +4,14 @@ use App\Enums\NotificationStatus;
 use App\Filament\Resources\Batches\Pages\ListBatches;
 use App\Filament\Resources\Batches\Pages\ViewBatch;
 use App\Filament\Resources\Batches\RelationManagers\NotificationsRelationManager;
+use App\Filament\Resources\Batches\Schemas\BatchInfolist;
 use App\Models\Batch;
 use App\Models\Notification;
 use App\Models\User;
+use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Schema;
 use Livewire\Livewire;
 
 uses(Illuminate\Foundation\Testing\RefreshDatabase::class);
@@ -180,12 +184,69 @@ test('the notifications of a batch have the same payload view as the notificatio
         ->assertMountedActionModalDontSee('https:\\/\\/', false);
 });
 
-test('the batch page shows the status of each notification', function () {
+test('the notifications of a batch show the status of each notification', function () {
     $batch = Batch::factory()->create(['zaak_identificatie' => 'ZAAK-0001']);
     Notification::factory()->forZaak()->failed()->create(['batch_id' => $batch->id, 'zaak_identificatie' => 'ZAAK-0001']);
     Notification::factory()->forResultaat()->create(['batch_id' => $batch->id, 'zaak_identificatie' => 'ZAAK-0001']);
 
-    Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])
+    Livewire::test(NotificationsRelationManager::class, [
+        'ownerRecord' => $batch,
+        'pageClass' => ViewBatch::class,
+    ])
         ->assertSee('Mislukt')
         ->assertSee('Nog niet verwerkt');
+});
+
+// ─── Layout of the batch page ────────────────────────────────────────────────
+
+test('the batch details take the full width and the notifications are only listed in the relation manager', function () {
+    $components = BatchInfolist::configure(Schema::make())->getComponents();
+
+    expect($components)->toHaveCount(1)
+        ->and($components[0])->toBeInstanceOf(Section::class)
+        ->and($components[0]->getHeading())->toBe('Batch details')
+        ->and($components[0]->getColumnSpan('default'))->toBe('full');
+});
+
+test('the batch page shows the notifications under one Dutch heading', function () {
+    $batch = Batch::factory()->create(['zaak_identificatie' => 'ZAAK-0001']);
+    Notification::factory()->forZaak()->create(['batch_id' => $batch->id, 'zaak_identificatie' => 'ZAAK-0001']);
+
+    Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])
+        ->assertSeeLivewire(NotificationsRelationManager::class)
+        ->assertDontSeeText('Notifications');
+
+    $relationManager = Livewire::test(NotificationsRelationManager::class, [
+        'ownerRecord' => $batch,
+        'pageClass' => ViewBatch::class,
+    ])
+        ->assertDontSeeText('Notifications');
+
+    expect(substr_count(strip_tags($relationManager->html()), 'Notificaties'))->toBe(1);
+});
+
+test('the notifications of a batch show every column and the record actions as icon buttons', function () {
+    $batch = Batch::factory()->create(['zaak_identificatie' => 'ZAAK-0001']);
+    $failed = Notification::factory()->forZaak()->failed()->create(['batch_id' => $batch->id, 'zaak_identificatie' => 'ZAAK-0001']);
+
+    $component = Livewire::test(NotificationsRelationManager::class, [
+        'ownerRecord' => $batch,
+        'pageClass' => ViewBatch::class,
+    ]);
+
+    foreach (['sort_order', 'actie_resource', 'aanmaakdatum', 'status', 'processed_at'] as $column) {
+        $component->assertCanRenderTableColumn($column);
+    }
+
+    $component
+        ->assertActionExists(
+            TestAction::make('view_payload')->table($failed),
+            fn (Action $action): bool => $action->isIconButton() && $action->getTooltip() === 'Bekijk payload',
+        )
+        ->assertActionExists(
+            TestAction::make('failed_job')->table($failed),
+            fn (Action $action): bool => $action->isIconButton() && $action->getTooltip() === 'Mislukte job openen in de job monitor',
+        )
+        ->assertSeeHtml('aria-label="Bekijk payload"')
+        ->assertSeeHtml('aria-label="Mislukte job"');
 });

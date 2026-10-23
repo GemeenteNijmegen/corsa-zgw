@@ -49,7 +49,7 @@ class NotificationsRelationManager extends RelationManager
                 TextColumn::make('aanmaakdatum')
                     ->label('Aangemaakt')
                     ->state(fn ($record): ?string => $record->notification['aanmaakdatum'] ?? null)
-                    ->dateTime('d-m-Y H:i:s')
+                    ->dateTime()
                     ->placeholder('—'),
                 NotificationsTable::statusColumn(),
                 TextColumn::make('processed_at')
