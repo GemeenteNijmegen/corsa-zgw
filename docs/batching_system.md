@@ -164,6 +164,7 @@ ALTER TABLE notifications ADD COLUMN processed_at TIMESTAMP NULL;
 ALTER TABLE notifications ADD COLUMN ignored_at TIMESTAMP NULL;
 ALTER TABLE notifications ADD COLUMN ignored_reason VARCHAR(255) NULL;  -- unsupported_channel, unsupported_action, unknown_zaaktype, inactive_zaaktype
 ALTER TABLE notifications ADD INDEX (ignored_reason);
+ALTER TABLE notifications ADD INDEX (ignored_at);
 ALTER TABLE notifications ALTER COLUMN zaak_identificatie DROP NOT NULL;
 ```
 
@@ -179,7 +180,7 @@ Gemaakte migraties:
 - `2025_11_28_132300_create_batches_table.php`: Maakt batchtabel aan
 - `2025_11_28_132301_add_batch_id_to_notifications_table.php`: Voegt relatie toe
 - `2026_04_21_125920_add_processed_at_to_notifications_table.php`: Voegt `processed_at` timestamp toe aan notificaties
-- `2026_10_23_090000_add_ignored_columns_to_notifications_table.php`: Voegt `ignored_at` en `ignored_reason` toe en maakt `zaak_identificatie` nullable
+- `2026_10_23_090000_add_ignored_columns_to_notifications_table.php`: Voegt `ignored_at` en `ignored_reason` toe (beide met een index) en maakt `zaak_identificatie` nullable
 
 ## Gebruiksvoorbeelden
 

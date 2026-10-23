@@ -15,6 +15,7 @@ return new class extends Migration
             $table->timestamp('ignored_at')->nullable()->after('processed_at');
             $table->string('ignored_reason')->nullable()->after('ignored_at');
             $table->index('ignored_reason');
+            $table->index('ignored_at');
         });
 
         // A notification that is ignored before the zaak is fetched has no zaak identificatie.
@@ -31,6 +32,7 @@ return new class extends Migration
         // zaak_identificatie stays nullable: rows without one may exist by now.
         Schema::table('notifications', function (Blueprint $table) {
             $table->dropIndex(['ignored_reason']);
+            $table->dropIndex(['ignored_at']);
             $table->dropColumn(['ignored_at', 'ignored_reason']);
         });
     }
