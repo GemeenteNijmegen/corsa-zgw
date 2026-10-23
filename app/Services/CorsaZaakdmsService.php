@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Enums\DocumentSyncOutcome;
+use App\Models\DocumentSync;
 use App\Models\Notification;
 use App\Models\ZaaktypeMapping;
 use App\Services\Zgw\ZgwReader;
@@ -24,6 +26,14 @@ class CorsaZaakdmsService
     private const TEMP_DISK = 'local';
 
     private const TEMP_DIR = 'zaakdms-temp';
+
+    /** Document status of a document that is still being edited. */
+    public const STATUS_IN_BEWERKING = 'in_bewerking';
+
+    /** Sent instead of the content of a document that has none yet. */
+    private const PLACEHOLDER_CONTENT = 'Tijdelijk bestand';
+
+    private const PLACEHOLDER_FILENAME = 'tijdelijk-bestand.txt';
 
     public function __construct(
         private readonly ZgwReader $zgw,
@@ -152,6 +162,19 @@ class CorsaZaakdmsService
 
     public function processDocumentAangemaakt(Notification $notification): void
     {
+        if ($this->addDocumentToZaak($notification) === DocumentSyncOutcome::ZaakNotInCorsa) {
+            throw new RuntimeException('Missing zaak in Corsa for partial update');
+        }
+    }
+
+    /**
+     * Add the document of a create:zaakinformatieobject notification to its zaak.
+     *
+     * A document that was already sent for the same zaak is not sent again. When the zaak is not in
+     * the document management system yet, nothing is sent and the caller decides what to do.
+     */
+    public function addDocumentToZaak(Notification $notification): DocumentSyncOutcome
+    {
         $zoiUrl = $notification->notification['resourceUrl'] ?? null;
         if (! $zoiUrl) {
             Log::warning('Missing zaakinformatieobject url for document create', [
@@ -177,12 +200,25 @@ class CorsaZaakdmsService
             throw new RuntimeException('Missing informatieobject url for document create');
         }
 
+        $sync = DocumentSync::where('document_url', $documentUrl)->first();
+
+        if ($sync && $sync->zaak_identificatie === $notification->zaak_identificatie) {
+            Log::info('Document already sent to Corsa for this zaak, skipping', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $notification->zaak_identificatie,
+                'document_identificatie' => $sync->corsa_identificatie,
+            ]);
+
+            return DocumentSyncOutcome::AlreadySynced;
+        }
+
         if (! $this->checkZaakExistenceInCorsa($notification->zaak_identificatie, $notification)) {
-            Log::warning('Missing zaak in Corsa for partial update', [
+            Log::warning('Missing zaak in Corsa for document create', [
                 'notification_id' => $notification->id,
                 'zaak_identificatie' => $notification->zaak_identificatie,
             ]);
-            throw new RuntimeException('Missing zaak in Corsa for partial update');
+
+            return DocumentSyncOutcome::ZaakNotInCorsa;
         }
 
         $documentData = $this->zgw->get($documentUrl);
@@ -193,8 +229,10 @@ class CorsaZaakdmsService
             $documentIdentificatie = $this->zaakdms->genereerDocumentIdentificatie();
         }
 
+        $placeholderAllowed = $this->mayUsePlaceholder($documentData);
+
         $inhoudUrl = $documentData['inhoud'] ?? null;
-        if (! $inhoudUrl) {
+        if (! $inhoudUrl && ! $placeholderAllowed) {
             Log::warning('Missing inhoud url for document download', [
                 'notification_id' => $notification->id,
                 'document_url' => $documentUrl,
@@ -202,11 +240,32 @@ class CorsaZaakdmsService
             throw new RuntimeException('Missing inhoud url for document download');
         }
 
+        $content = $inhoudUrl ? $this->downloadDocument($inhoudUrl, $notification) : '';
+        $placeholder = $content === '';
+
+        if ($placeholder && ! $placeholderAllowed) {
+            Log::warning('Downloaded document content is empty', [
+                'notification_id' => $notification->id,
+                'inhoud_url' => $inhoudUrl,
+            ]);
+            throw new RuntimeException('Document content is empty');
+        }
+
+        if ($placeholder) {
+            Log::info('Document has no content yet, sending a placeholder', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $notification->zaak_identificatie,
+                'document_identificatie' => $documentIdentificatie,
+            ]);
+        }
+
         $bestandsnaam = $documentData['bestandsnaam']
             ?? $documentData['titel']
             ?? ('document-'.$documentIdentificatie.'.bin');
 
-        $tempPath = $this->writeTempDocument($bestandsnaam, $inhoudUrl, $notification);
+        $tempPath = $placeholder
+            ? $this->writeTempDocument(self::PLACEHOLDER_FILENAME, self::PLACEHOLDER_CONTENT, $notification)
+            : $this->writeTempDocument($bestandsnaam, $content, $notification);
 
         try {
             $options = [
@@ -235,6 +294,7 @@ class CorsaZaakdmsService
                 'notification_id' => $notification->id,
                 'zaak_identificatie' => $notification->zaak_identificatie,
                 'document_identificatie' => $documentIdentificatie,
+                'placeholder' => $placeholder,
                 'corsa_reference' => $reference,
             ]);
         } finally {
@@ -243,6 +303,10 @@ class CorsaZaakdmsService
                 'path' => $tempPath,
             ]);
         }
+
+        $this->recordDocumentSync($sync, $documentUrl, $notification, $documentIdentificatie, $documentData, $placeholder);
+
+        return DocumentSyncOutcome::Added;
     }
 
     public function processResultaatAangemaakt(Notification $notification): void
@@ -503,22 +567,29 @@ class CorsaZaakdmsService
         return self::DEFAULT_VERTRAUWELIJK_AANDUIDING;
     }
 
-    private function writeTempDocument(string $bestandsnaam, string $inhoudUrl, Notification $notification): string
+    /**
+     * A document that is still being edited may be linked before it has any content, for example
+     * when it is created from a template. Only then a placeholder is sent instead of the content.
+     * A document with bestandsdelen is still being uploaded and does not qualify.
+     */
+    private function mayUsePlaceholder(array $documentData): bool
+    {
+        return ($documentData['status'] ?? null) === self::STATUS_IN_BEWERKING
+            && empty($documentData['bestandsdelen'] ?? []);
+    }
+
+    private function downloadDocument(string $inhoudUrl, Notification $notification): string
     {
         Log::debug('Downloading document content from ZGW', [
             'notification_id' => $notification->id,
             'inhoud_url' => $inhoudUrl,
         ]);
 
-        $content = $this->zgw->getRaw($inhoudUrl);
-        if ($content === '') {
-            Log::warning('Downloaded document content is empty', [
-                'notification_id' => $notification->id,
-                'inhoud_url' => $inhoudUrl,
-            ]);
-            throw new RuntimeException('Document content is empty');
-        }
+        return $this->zgw->getRaw($inhoudUrl);
+    }
 
+    private function writeTempDocument(string $bestandsnaam, string $content, Notification $notification): string
+    {
         $safeName = Str::slug(pathinfo($bestandsnaam, PATHINFO_FILENAME));
         $extension = pathinfo($bestandsnaam, PATHINFO_EXTENSION);
         $filename = $safeName ?: 'document-'.Str::uuid();
@@ -538,6 +609,39 @@ class CorsaZaakdmsService
         ]);
 
         return $tempPath;
+    }
+
+    /**
+     * Remember what was sent for this document. A document that is already registered for
+     * another zaak keeps that registration.
+     */
+    private function recordDocumentSync(
+        ?DocumentSync $sync,
+        string $documentUrl,
+        Notification $notification,
+        string $documentIdentificatie,
+        array $documentData,
+        bool $placeholder,
+    ): void {
+        if ($sync) {
+            Log::warning('Document was already sent to Corsa for another zaak', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $notification->zaak_identificatie,
+                'registered_zaak_identificatie' => $sync->zaak_identificatie,
+                'document_identificatie' => $documentIdentificatie,
+            ]);
+
+            return;
+        }
+
+        DocumentSync::create([
+            'document_url' => $documentUrl,
+            'zaak_identificatie' => $notification->zaak_identificatie,
+            'corsa_identificatie' => $documentIdentificatie,
+            'versie' => isset($documentData['versie']) ? (int) $documentData['versie'] : null,
+            'placeholder' => $placeholder,
+            'synced_at' => now(),
+        ]);
     }
 
     public function checkZaakExistenceInCorsa(string $identificatie, Notification $notification): bool

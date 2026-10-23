@@ -3,12 +3,15 @@
 namespace App\Jobs\Notifications;
 
 use App\Enums\NotificationIgnoreReason;
+use App\Enums\NotificationRoute;
 use App\Models\Notification;
 use App\Models\ZaaktypeMapping;
 use App\Services\BatchingService;
+use App\Services\CorsaZaakdmsService;
 use App\Services\Zgw\ZgwReader;
 use App\ValueObjects\OpenNotification;
 use App\ValueObjects\ZGW\Zaak;
+use Exception;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -90,6 +93,12 @@ class IngestNotification implements ShouldQueue
             'actie' => $this->opennotification->actie,
         ]);
 
+        if ($this->resolveRoute($zgw) === NotificationRoute::Direct) {
+            $this->storeDirect($zaak->identificatie);
+
+            return;
+        }
+
         // Get or create batch for this case
         $batch = $batchingService->getOrCreateBatch($zaak->identificatie);
 
@@ -107,6 +116,62 @@ class IngestNotification implements ShouldQueue
             'notification_id' => $notification->id,
             'batch_id' => $batch->id,
             'zaak_identificatie' => $zaak->identificatie,
+        ]);
+    }
+
+    /**
+     * A document that is linked to a zaak while it is still being edited is processed directly,
+     * so it is in the document management system without waiting for the batch of the zaak.
+     * Everything else goes through the batch.
+     */
+    private function resolveRoute(ZgwReader $zgw): NotificationRoute
+    {
+        if ("{$this->opennotification->actie}:{$this->opennotification->resource}" !== 'create:zaakinformatieobject') {
+            return NotificationRoute::Batch;
+        }
+
+        try {
+            $zoiData = $zgw->get($this->opennotification->resourceUrl);
+            $documentUrl = $zoiData['informatieobject'] ?? $zoiData['informatieObject'] ?? null;
+
+            if (! $documentUrl) {
+                return NotificationRoute::Batch;
+            }
+
+            $status = $zgw->get($documentUrl)['status'] ?? null;
+        } catch (Exception $e) {
+            // The batch fetches the same resources again and reports the error there.
+            Log::warning('Could not determine the document status, using the batch', [
+                'actie' => $this->opennotification->actie,
+                'resource' => $this->opennotification->resource,
+                'error' => get_class($e),
+            ]);
+
+            return NotificationRoute::Batch;
+        }
+
+        return $status === CorsaZaakdmsService::STATUS_IN_BEWERKING
+            ? NotificationRoute::Direct
+            : NotificationRoute::Batch;
+    }
+
+    /**
+     * Store a notification on the direct route and queue it for processing, outside any batch.
+     */
+    private function storeDirect(string $zaakIdentificatie): void
+    {
+        $notification = Notification::create([
+            'zaak_identificatie' => $zaakIdentificatie,
+            'route' => NotificationRoute::Direct,
+            'notification' => $this->opennotification->toArray(),
+            'processed' => false,
+        ]);
+
+        ProcessDocumentDirectly::dispatch($notification);
+
+        Log::info('Notification queued for direct processing', [
+            'notification_id' => $notification->id,
+            'zaak_identificatie' => $zaakIdentificatie,
         ]);
     }
 

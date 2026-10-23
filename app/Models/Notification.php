@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\NotificationIgnoreReason;
+use App\Enums\NotificationRoute;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,6 +17,7 @@ class Notification extends Model
     protected $fillable = [
         'id',
         'batch_id',
+        'route',
         'zaak_identificatie',
         'notification',
         'processed',
@@ -26,6 +28,7 @@ class Notification extends Model
 
     protected $casts = [
         'notification' => 'array',
+        'route' => NotificationRoute::class,
         'processed' => 'boolean',
         'processed_at' => 'datetime',
         'ignored_at' => 'datetime',
