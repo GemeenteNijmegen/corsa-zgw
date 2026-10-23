@@ -67,7 +67,10 @@ return [
             'driver' => 'redis',
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
+            /**
+             * Must be larger than horizon job timeout
+             */
+            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 60 * 6),
             'block_for' => null,
             'after_commit' => false,
         ],
