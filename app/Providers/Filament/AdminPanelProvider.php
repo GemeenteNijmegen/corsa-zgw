@@ -5,6 +5,7 @@ namespace App\Providers\Filament;
 use App\Filament\Resources\Batches\BatchResource;
 use App\Filament\Resources\Catalogi\CatalogusResource;
 use App\Filament\Resources\IgnoredNotifications\IgnoredNotificationResource;
+use App\Filament\Resources\Notifications\NotificationResource;
 use App\Filament\Resources\Users\UserResource;
 use App\Filament\Resources\ZaaktypeMappings\ZaaktypeMappingResource;
 use Filament\Http\Middleware\Authenticate;
@@ -90,6 +91,7 @@ class AdminPanelProvider extends PanelProvider
                     NavigationGroup::make(__('Monitoring'))
                         ->items([
                             ...BatchResource::getNavigationItems(),
+                            ...NotificationResource::getNavigationItems(),
                             ...IgnoredNotificationResource::getNavigationItems(),
                             NavigationItem::make(__('Job monitor'))
                                 ->icon('heroicon-m-share')
