@@ -34,8 +34,8 @@ return [
     /**
      * Minutes after which a batch that is still processing, without a failed notification, is shown
      * as taking long. A job in the chain waits up to 20 times 15 seconds (5 minutes) for a document
-     * that another job is sending, and a single attempt may run up to the worker time-out of
-     * 5 minutes, so a normal chain of a few jobs finishes well within 30 minutes, also with some
+     * that another job is sending, and a single attempt may run up to the worker time-out (60
+     * seconds by default, 5 minutes in production, see config/horizon.php), so a normal chain of a few jobs finishes well within 30 minutes, also with some
      * wait in the queue. A batch with many documents can take longer; raise the value if that is
      * normal for an environment.
      */

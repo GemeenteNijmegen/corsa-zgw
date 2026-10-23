@@ -130,7 +130,8 @@ class BatchingService
             $this->processBatchWithoutZaakAangemaakt($batch, $sortedNotifications);
         }
 
-        // The batch stays "processing" until the last job of the chain marks it as processed.
+        // The batch stays "processing" until the last job of the chain marks it as processed, or
+        // until the catch callback of the chain marks it as failed.
     }
 
     /**
@@ -213,8 +214,8 @@ class BatchingService
     {
         $jobs[] = new MarkBatchProcessed($batch);
 
-        // The catch callback is serialized with the chain. It is static and only captures the id,
-        // so it carries neither this service nor the model.
+        // The catch callback is serialized with the chain. It only captures the id, so it carries no
+        // model; static makes explicit that it does not need this service either.
         $batchId = (string) $batch->id;
 
         Bus::chain($jobs)
