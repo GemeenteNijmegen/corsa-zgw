@@ -14,7 +14,7 @@
         "laravel/sanctum": "^4.0",
         "laravel/telescope": "^5.11",
         "laravel/tinker": "^2.10.1",
-        "woweb/laravel-zaakdms": "dev-main",
+        "woweb/laravel-zaakdms": "^1.0",
         "woweb/laravel-zgw-client": "^1.3"
     },
     "require-dev": {
