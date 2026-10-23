@@ -26,7 +26,7 @@ class BatchInfolist
                         ->badge()
                         ->color(fn (string $state): string => match ($state) {
                             'pending' => 'gray',
-                            'processing' => 'warning',
+                            'processing' => 'info',
                             'processed' => 'success',
                             default => 'gray',
                         }),
@@ -34,7 +34,7 @@ class BatchInfolist
                         ->label('Ontvangen')
                         ->dateTime(),
                     TextEntry::make('locked_at')
-                        ->label('Vergrendeld')
+                        ->label('Vergrendeld op')
                         ->dateTime()
                         ->placeholder('—'),
                     TextEntry::make('processed_at')
@@ -60,7 +60,7 @@ class BatchInfolist
                         ->color('warning')
                         ->icon('heroicon-o-exclamation-triangle')
                         ->helperText(fn (Batch $record): string => sprintf(
-                            'De batch staat op verwerkt, maar %d notificatie(s) zijn niet verwerkt, niet mislukt en niet genegeerd.',
+                            'De batch is afgerond, maar %d notificatie(s) erin zijn niet verwerkt, niet mislukt en niet genegeerd.',
                             $record->notProcessedNotificationsCount(),
                         ))
                         ->visible(fn (Batch $record): bool => $record->isIncomplete()),

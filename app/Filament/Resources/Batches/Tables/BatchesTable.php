@@ -26,7 +26,8 @@ class BatchesTable
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
                         'pending' => 'gray',
-                        'processing' => 'warning',
+                        // Not orange, so it is not confused with "Niet alles verwerkt".
+                        'processing' => 'info',
                         'processed' => 'success',
                         default => 'gray',
                     })
@@ -100,7 +101,8 @@ class BatchesTable
             ->badge()
             ->color('danger')
             ->icon('heroicon-o-x-circle')
-            ->tooltip('Notificaties waarvan de job definitief is mislukt');
+            ->tooltip('Notificaties waarvan de job definitief is mislukt')
+            ->sortable();
     }
 
     /**
@@ -116,7 +118,7 @@ class BatchesTable
             ->color('warning')
             ->icon('heroicon-o-exclamation-triangle')
             ->tooltip(fn (Batch $record): ?string => $record->isIncomplete()
-                ? sprintf('De batch staat op verwerkt, maar %d notificatie(s) zijn niet verwerkt, niet mislukt en niet genegeerd.', $record->notProcessedNotificationsCount())
+                ? sprintf('De batch is afgerond, maar %d notificatie(s) erin zijn niet verwerkt, niet mislukt en niet genegeerd.', $record->notProcessedNotificationsCount())
                 : null);
     }
 

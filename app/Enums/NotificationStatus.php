@@ -7,7 +7,7 @@ use Filament\Support\Contracts\HasIcon;
 use Filament\Support\Contracts\HasLabel;
 
 /**
- * Where a notification that is not ignored stands, as shown in the admin panel.
+ * Where a notification stands, as shown in the admin panel.
  */
 enum NotificationStatus: string implements HasColor, HasIcon, HasLabel
 {
@@ -22,12 +22,16 @@ enum NotificationStatus: string implements HasColor, HasIcon, HasLabel
      */
     case Pending = 'pending';
 
+    /** Accepted but deliberately not processed; see the overview of ignored notifications. */
+    case Ignored = 'ignored';
+
     public function getLabel(): string
     {
         return match ($this) {
             self::Processed => 'Verwerkt',
             self::Failed => 'Mislukt',
             self::Pending => 'Nog niet verwerkt',
+            self::Ignored => 'Genegeerd',
         };
     }
 
@@ -37,6 +41,7 @@ enum NotificationStatus: string implements HasColor, HasIcon, HasLabel
             self::Processed => 'success',
             self::Failed => 'danger',
             self::Pending => 'gray',
+            self::Ignored => 'gray',
         };
     }
 
@@ -46,6 +51,7 @@ enum NotificationStatus: string implements HasColor, HasIcon, HasLabel
             self::Processed => 'heroicon-o-check-circle',
             self::Failed => 'heroicon-o-x-circle',
             self::Pending => 'heroicon-o-clock',
+            self::Ignored => 'heroicon-o-eye-slash',
         };
     }
 }

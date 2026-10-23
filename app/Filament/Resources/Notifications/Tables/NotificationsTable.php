@@ -56,7 +56,11 @@ class NotificationsTable
                     ->options(NotificationRoute::class),
                 SelectFilter::make('status')
                     ->label('Status')
-                    ->options(NotificationStatus::class)
+                    // Ignored notifications have their own overview.
+                    ->options(collect(NotificationStatus::cases())
+                        ->reject(fn (NotificationStatus $status): bool => $status === NotificationStatus::Ignored)
+                        ->mapWithKeys(fn (NotificationStatus $status): array => [$status->value => $status->getLabel()])
+                        ->all())
                     ->query(fn (Builder $query, array $data): Builder => self::whereStatus($query, $data['value'] ?? null)),
                 SelectFilter::make('zaak_identificatie')
                     ->label('Zaak')
@@ -105,6 +109,7 @@ class NotificationsTable
             NotificationStatus::Processed => $query->where('processed', true),
             NotificationStatus::Failed => $query->where('processed', false)->whereNotNull('failed_at'),
             NotificationStatus::Pending => $query->where('processed', false)->whereNull('failed_at'),
+            NotificationStatus::Ignored => $query->where('processed', false)->whereNotNull('ignored_at'),
             null => $query,
         };
     }

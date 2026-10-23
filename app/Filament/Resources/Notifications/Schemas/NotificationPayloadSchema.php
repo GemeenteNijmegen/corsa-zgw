@@ -43,7 +43,7 @@ class NotificationPayloadSchema
             ->label('Mislukte job')
             ->icon(Heroicon::OutlinedArrowTopRightOnSquare)
             ->iconButton()
-            ->tooltip('Mislukte job openen in de job monitor')
+            ->tooltip('Mislukte job')
             ->color('danger')
             ->url(fn (Notification $record): ?string => $record->failedJobUrl())
             ->openUrlInNewTab()

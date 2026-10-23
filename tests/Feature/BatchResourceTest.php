@@ -265,7 +265,7 @@ test('the notifications of a batch show every column and the record actions as i
         )
         ->assertActionExists(
             TestAction::make('failed_job')->table($failed),
-            fn (Action $action): bool => $action->isIconButton() && $action->getTooltip() === 'Mislukte job openen in de job monitor',
+            fn (Action $action): bool => $action->isIconButton() && $action->getTooltip() === 'Mislukte job',
         )
         ->assertSeeHtml('aria-label="Bekijk payload"')
         ->assertSeeHtml('aria-label="Mislukte job"');

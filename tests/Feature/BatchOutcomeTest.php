@@ -111,11 +111,44 @@ test('the overview can be filtered on incomplete batches', function () {
     $failed = batchWithFailedNotification();
     $open = processedBatchWithOpenNotification();
     $complete = completeBatch();
+    // Waiting for its timer and running its chain: open notifications are expected there.
+    $waiting = Batch::factory()->pending()->create(['zaak_identificatie' => 'ZAAK-0004']);
+    $running = Batch::factory()->create(['zaak_identificatie' => 'ZAAK-0005', 'status' => 'processing', 'locked_at' => now()]);
+    foreach ([$waiting, $running] as $batch) {
+        Notification::factory()->forZaak()->create(['batch_id' => $batch->id, 'zaak_identificatie' => $batch->zaak_identificatie]);
+    }
 
     Livewire::test(ListBatches::class)
+        ->assertTableColumnStateSet('incomplete', null, $waiting)
+        ->assertTableColumnStateSet('incomplete', null, $running)
         ->filterTable('incomplete')
         ->assertCanSeeTableRecords([$open])
-        ->assertCanNotSeeTableRecords([$failed, $complete]);
+        ->assertCanNotSeeTableRecords([$failed, $complete, $waiting, $running]);
+});
+
+test('a running batch is blue, not orange like "Niet alles verwerkt", and failed counts can be sorted', function () {
+    $running = Batch::factory()->create(['zaak_identificatie' => 'ZAAK-0005', 'status' => 'processing', 'locked_at' => now()]);
+
+    $component = Livewire::test(ListBatches::class);
+    $table = $component->instance()->getTable();
+
+    expect($table->getColumn('status')->record($running)->getColor('processing'))->toBe('info')
+        ->and($table->getColumn('incomplete')->getColor('Niet alles verwerkt'))->toBe('warning')
+        ->and($table->getColumn('failed_notifications_count')->isSortable())->toBeTrue();
+});
+
+test('an ignored notification in a batch shows as ignored, not as pending or failed', function () {
+    $batch = Batch::factory()->processed()->create(['zaak_identificatie' => 'ZAAK-0001']);
+    $ignored = Notification::factory()->failed()->create([
+        'batch_id' => $batch->id,
+        'zaak_identificatie' => 'ZAAK-0001',
+        'ignored_at' => now(),
+        'ignored_reason' => App\Enums\NotificationIgnoreReason::UnsupportedAction,
+    ]);
+
+    expect($ignored->status())->toBe(App\Enums\NotificationStatus::Ignored)
+        ->and($batch->failedNotificationsCount())->toBe(0)
+        ->and($batch->isIncomplete())->toBeFalse();
 });
 
 test('the overview does not query per row for the signals', function () {
@@ -153,7 +186,7 @@ test('the batch page shows that not everything in a processed batch is processed
 
     Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])
         ->assertSee('Niet alles verwerkt')
-        ->assertSee('1 notificatie(s) zijn niet verwerkt, niet mislukt en niet genegeerd')
+        ->assertSee('De batch is afgerond, maar 1 notificatie(s) erin zijn niet verwerkt, niet mislukt en niet genegeerd')
         ->assertDontSee('Mislukte notificaties');
 });
 

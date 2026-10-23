@@ -300,7 +300,7 @@ test('the record actions are icon buttons with a tooltip, so they stay in view n
         )
         ->assertActionExists(
             TestAction::make('failed_job')->table($failed),
-            fn (Action $action): bool => $action->isIconButton() && $action->getTooltip() === 'Mislukte job openen in de job monitor',
+            fn (Action $action): bool => $action->isIconButton() && $action->getTooltip() === 'Mislukte job',
         )
         ->assertSeeHtml('aria-label="Bekijk payload"')
         ->assertSeeHtml('aria-label="Mislukte job"');

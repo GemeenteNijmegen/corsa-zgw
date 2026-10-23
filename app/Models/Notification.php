@@ -94,6 +94,7 @@ class Notification extends Model
     {
         return match (true) {
             $this->processed => NotificationStatus::Processed,
+            $this->ignored_at !== null => NotificationStatus::Ignored,
             $this->failed_at !== null => NotificationStatus::Failed,
             default => NotificationStatus::Pending,
         };
