@@ -25,15 +25,18 @@ class NotificationRequest extends FormRequest
         // Every kanaal and resource is accepted: a well-formed notification that this
         // application does not process is acknowledged and stored as ignored, so the
         // sender does not keep retrying it. The actie is limited to the actions the
-        // ZGW APIs publish, including partial_update for a PATCH.
+        // ZGW APIs publish, including partial_update for a PATCH. The length limits
+        // follow the Message schema of the Notificaties API 1.0.0.
         return [
             'actie' => 'required|string|in:create,update,partial_update,destroy',
-            'kanaal' => 'required|string|max:255',
-            'resource' => 'required|string|max:255',
+            'kanaal' => 'required|string|max:50',
+            'resource' => 'required|string|max:100',
             'hoofdObject' => ['bail', 'required', 'url', app(ConfiguredZgwHost::class)],
             'resourceUrl' => ['bail', 'required', 'url', app(ConfiguredZgwHost::class)],
             'aanmaakdatum' => 'required|date',
             'kenmerken' => 'sometimes|nullable|array',
+            // Empty strings arrive as null through the ConvertEmptyStringsToNull middleware.
+            'kenmerken.*' => 'nullable|string|max:1000',
         ];
     }
 }

@@ -21,11 +21,11 @@ final readonly class OpenNotification implements Arrayable
         'create:resultaat',
     ];
 
-    /** @var array<string, mixed> */
+    /** @var array<string, string|null> */
     public array $kenmerken;
 
     /**
-     * @param  array<string, mixed>|null  $kenmerken
+     * @param  array<string, string|null>|null  $kenmerken
      */
     public function __construct(
         public string $actie,

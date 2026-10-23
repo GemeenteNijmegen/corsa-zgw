@@ -80,6 +80,33 @@ test('it accepts kenmerken that are null', function () {
     });
 });
 
+test('it rejects values beyond the limits of the Notificaties API message', function (array $overrides, string $field) {
+    Sanctum::actingAs(User::factory()->create());
+
+    $this->postJson(NOTIFICATIONS_ENDPOINT, validNotificationPayload($overrides))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors([$field]);
+
+    Queue::assertNothingPushed();
+})->with([
+    'kanaal of 51 characters' => [['kanaal' => str_repeat('k', 51)], 'kanaal'],
+    'resource of 101 characters' => [['resource' => str_repeat('r', 101)], 'resource'],
+    'kenmerk of 1001 characters' => [['kenmerken' => ['zaaktype' => str_repeat('z', 1001)]], 'kenmerken.zaaktype'],
+    'nested kenmerk value' => [['kenmerken' => ['zaaktype' => ['nested' => 'value']]], 'kenmerken.zaaktype'],
+]);
+
+test('it accepts values at the limits of the Notificaties API message', function () {
+    Sanctum::actingAs(User::factory()->create());
+
+    $this->postJson(NOTIFICATIONS_ENDPOINT, validNotificationPayload([
+        'kanaal' => str_repeat('k', 50),
+        'resource' => str_repeat('r', 100),
+        'kenmerken' => ['zaaktype' => str_repeat('z', 1000), 'leeg' => ''],
+    ]))->assertOk();
+
+    Queue::assertPushed(IngestNotification::class, 1);
+});
+
 test('it rejects kenmerken that are not an object', function () {
     Sanctum::actingAs(User::factory()->create());
 
