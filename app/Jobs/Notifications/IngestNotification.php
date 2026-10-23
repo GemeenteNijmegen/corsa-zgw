@@ -14,6 +14,7 @@ use App\ValueObjects\ZGW\Zaak;
 use Exception;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Woweb\Zgw\Exceptions\DisallowedHostException;
 
@@ -106,18 +107,22 @@ class IngestNotification implements ShouldQueue
             return;
         }
 
-        // Get or create batch for this case
-        $batch = $batchingService->getOrCreateBatch($zaak->identificatie);
+        // Finding the open batch and linking the notification to it happen in one transaction, so
+        // the batch cannot be locked for processing in between (see getOrCreateBatch()).
+        [$batch, $notification] = DB::transaction(function () use ($batchingService, $zaak): array {
+            $batch = $batchingService->getOrCreateBatch($zaak->identificatie);
 
-        // Create the notification record in the database
-        $notification = Notification::create([
-            'zaak_identificatie' => $zaak->identificatie,
-            'notification' => $this->opennotification->toArray(),
-            'processed' => false,
-        ]);
+            $notification = Notification::create([
+                'zaak_identificatie' => $zaak->identificatie,
+                'notification' => $this->opennotification->toArray(),
+                'processed' => false,
+            ]);
 
-        // Add notification to batch and reset timer
-        $batchingService->addNotificationToBatch($notification, $batch);
+            // Add notification to batch and reset timer
+            $batchingService->addNotificationToBatch($notification, $batch);
+
+            return [$batch, $notification];
+        });
 
         Log::info('Notification added to batch', [
             'notification_id' => $notification->id,

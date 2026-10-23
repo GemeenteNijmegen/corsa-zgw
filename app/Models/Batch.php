@@ -135,11 +135,26 @@ class Batch extends Model
     }
 
     /**
-     * Lock the batch
+     * Lock the batch and set it to processing, unless it is locked already.
+     *
+     * One conditional update, so of two jobs that try this at the same time only one changes the
+     * row. On PostgreSQL the update also waits for a notification that is being added to the batch
+     * (see BatchingService::getOrCreateBatch()), so the notifications read after it include that one.
+     *
+     * @return bool whether this call locked the batch
      */
-    public function lock(): void
+    public function lockForProcessing(): bool
     {
-        $this->update(['locked_at' => now()]);
+        $locked = self::whereKey($this->getKey())
+            ->whereNull('locked_at')
+            ->update([
+                'locked_at' => now(),
+                'status' => 'processing',
+            ]) === 1;
+
+        $this->refresh();
+
+        return $locked;
     }
 
     /**
@@ -151,6 +166,26 @@ class Batch extends Model
             'processed_at' => now(),
             'status' => 'processed',
         ]);
+    }
+
+    /**
+     * Mark the batch as processed, unless it is processed already. One conditional update, so a
+     * second chain for the same batch keeps the time the first one finished.
+     *
+     * @return bool whether this call marked the batch
+     */
+    public function markProcessedOnce(): bool
+    {
+        $marked = self::whereKey($this->getKey())
+            ->whereNull('processed_at')
+            ->update([
+                'processed_at' => now(),
+                'status' => 'processed',
+            ]) === 1;
+
+        $this->refresh();
+
+        return $marked;
     }
 
     /**

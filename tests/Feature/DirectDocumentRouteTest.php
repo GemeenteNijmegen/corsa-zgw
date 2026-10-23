@@ -15,6 +15,7 @@ use App\ValueObjects\OpenNotification;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -755,4 +756,80 @@ test('both jobs are configured to wait for the lock without counting it as an er
         ->and($batch->maxExceptions)->toBe(1)
         ->and($batch->failOnTimeout)->toBeTrue()
         ->and($batch->tries * HandleNotification::LOCK_RETRY_SECONDS)->toBeGreaterThanOrEqual(CorsaZaakdmsService::DOCUMENT_LOCK_SECONDS);
+});
+
+// ─── Linking to a batch while it may be locked ───────────────────────────────
+//
+// Finding the open batch and linking the notification to it happen in one transaction, so on
+// PostgreSQL the row lock of getOrCreateBatch() keeps the batch from being locked for processing
+// in between. SQLite has no row locks, so these tests only show that both steps share the
+// transaction.
+
+/**
+ * Bind a batching service that records the transaction level at which the open batch is found and
+ * the notification is linked.
+ *
+ * @param  array<string, int>  $levels
+ */
+function recordBatchingTransactionLevels(array &$levels): void
+{
+    $real = new BatchingService;
+    $recording = Mockery::mock(BatchingService::class)->makePartial();
+    $recording->shouldReceive('getOrCreateBatch')->andReturnUsing(function (string $zaakIdentificatie) use (&$levels, $real) {
+        $levels['find'] = DB::transactionLevel();
+
+        return $real->getOrCreateBatch($zaakIdentificatie);
+    });
+    $recording->shouldReceive('addNotificationToBatch')->andReturnUsing(function (Notification $notification, Batch $batch) use (&$levels, $real) {
+        $levels['link'] = DB::transactionLevel();
+        $real->addNotificationToBatch($notification, $batch);
+    });
+
+    app()->instance(BatchingService::class, $recording);
+}
+
+test('a notification for the batch is linked in the same transaction that finds the open batch', function () {
+    Queue::fake();
+    activeDirectMapping();
+    fakeDirectApis(directDocument(['status' => 'definitief']));
+    $levels = [];
+    recordBatchingTransactionLevels($levels);
+    $outside = DB::transactionLevel();
+
+    ingestDirect(directOpenNotification());
+
+    expect($levels['find'])->toBe($outside + 1)
+        ->and($levels['link'])->toBe($outside + 1)
+        ->and(Notification::sole()->batch_id)->toBe(Batch::sole()->id);
+});
+
+test('a direct notification that moves to the batch is linked in the same transaction that finds the open batch', function () {
+    fakeDirectApis(directDocument());
+    $zaakdms = $this->mock(Zaakdms::class);
+    $zaakdms->shouldReceive('geefZaakDetails')->once()->andThrow(new Exception('not found'));
+    $levels = [];
+    recordBatchingTransactionLevels($levels);
+    $outside = DB::transactionLevel();
+
+    $notification = makeDirectNotification();
+    runDirectJob($notification)->assertNotFailed();
+
+    // The link itself is part of that transaction; the call afterwards only starts the timer.
+    expect($levels['find'])->toBe($outside + 1)
+        ->and($notification->fresh()->batch_id)->toBe(Batch::sole()->id);
+});
+
+test('a notification is not linked to a batch that was locked after it was found', function () {
+    Queue::fake();
+    activeDirectMapping();
+    fakeDirectApis(directDocument(['status' => 'definitief']));
+    $locked = Batch::create(['zaak_identificatie' => DIRECT_ZAAK_IDENTIFICATIE, 'status' => 'pending']);
+
+    // The batch is locked before the open batch is looked up, the order the row lock enforces.
+    app(BatchingService::class)->processBatch($locked);
+    ingestDirect(directOpenNotification());
+
+    $notification = Notification::sole();
+    expect($notification->batch_id)->not->toBe($locked->id)
+        ->and($notification->batch->isLocked())->toBeFalse();
 });
