@@ -47,9 +47,12 @@ class Zaak implements Arrayable
         private readonly array $_expand = [],
         ...$otherParams
     ) {
-        $this->initiator = Arr::has($this->_expand, 'rollen')
-            ? new Rol(...Arr::first(Arr::where($this->_expand['rollen'], fn ($item) => $item['omschrijvingGeneriek'] === 'initiator')))
-            : null;
+        // A zaak does not always have an initiator role; then there is no initiator.
+        $initiatorRol = Arr::first(
+            (array) ($this->_expand['rollen'] ?? []),
+            fn ($item) => is_array($item) && ($item['omschrijvingGeneriek'] ?? null) === 'initiator',
+        );
+        $this->initiator = $initiatorRol ? new Rol(...$initiatorRol) : null;
 
         $this->status = Arr::has($this->_expand, 'status')
             ? $this->_expand['status']

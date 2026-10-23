@@ -122,8 +122,18 @@ test('Rol::toArray returns the expected keys and drops unknown fields', function
     ]);
 });
 
-test('known bug: Zaak cannot be constructed when the expanded rollen contain no initiator', function () {
-    expect(fn () => new Zaak(...unitZaakData([
-        'rollen' => [unitRolData('belanghebbende', '00000000-0000-0000-0000-000000000702')],
-    ])))->toThrow(TypeError::class);
+test('Zaak has no initiator when the expanded rollen contain no initiator', function (array $rollen) {
+    $zaak = new Zaak(...unitZaakData(['rollen' => $rollen]));
+
+    expect($zaak->initiator)->toBeNull();
+})->with([
+    'only another role' => [[unitRolData('belanghebbende', '00000000-0000-0000-0000-000000000702')]],
+    'no roles' => [[]],
+    'a role without omschrijvingGeneriek' => [[array_diff_key(unitRolData('belanghebbende', '00000000-0000-0000-0000-000000000702'), ['omschrijvingGeneriek' => true])]],
+]);
+
+test('Zaak has no initiator when the expanded rollen are null', function () {
+    $zaak = new Zaak(...unitZaakData(['rollen' => null]));
+
+    expect($zaak->initiator)->toBeNull();
 });
