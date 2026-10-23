@@ -324,3 +324,27 @@ test('the overview hides the processing time by default and can show it again', 
         ->assertCanRenderTableColumn('processed_at')
         ->assertTableColumnStateSet('processed_at', $processed->processed_at, $processed);
 });
+
+// ─── Changes to documents ────────────────────────────────────────────────────
+
+test('it shows changes to documents with the other notifications', function () {
+    registerTelescopeRouteStandIn();
+    $update = Notification::factory()->documentUpdate()->processed()->create(['zaak_identificatie' => 'ZAAK-0001']);
+    $patch = Notification::factory()->documentUpdate('partial_update')->failed()->create(['zaak_identificatie' => 'ZAAK-0002']);
+    $link = createDirectNotification(['zaak_identificatie' => 'ZAAK-0003']);
+
+    Livewire::test(ListNotifications::class)
+        ->assertCanSeeTableRecords([$update, $patch, $link])
+        ->assertTableColumnStateSet('type', 'update:enkelvoudiginformatieobject', $update)
+        ->assertTableColumnStateSet('route', NotificationRoute::Direct, $update)
+        ->assertTableColumnStateSet('status', NotificationStatus::Processed, $update)
+        ->assertTableColumnStateSet('type', 'partial_update:enkelvoudiginformatieobject', $patch)
+        ->assertTableColumnStateSet('status', NotificationStatus::Failed, $patch)
+        ->filterTable('route', NotificationRoute::Direct->value)
+        ->assertCanSeeTableRecords([$update, $patch, $link]);
+
+    $this->withoutVite()
+        ->get(NotificationResource::getUrl('index'))
+        ->assertSuccessful()
+        ->assertSeeText('update:enkelvoudiginformatieobject');
+});
