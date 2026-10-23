@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\Notifications\HandleNotification;
+use App\Jobs\Notifications\MarkBatchProcessed;
 use App\Models\Batch;
 use App\Models\Notification;
 use App\Services\BatchingService;
@@ -234,7 +235,7 @@ test('processBatch returns early without dispatching jobs when batch is already 
     expect($batch->fresh()->status)->toBe('pending');
 });
 
-test('processBatch locks the batch and sets status to processing then processed', function () {
+test('processBatch locks the batch and keeps it processing while its chain runs', function () {
     Bus::fake();
     $batch = makeBatch();
     makeNotification($batch);
@@ -244,7 +245,8 @@ test('processBatch locks the batch and sets status to processing then processed'
 
     $fresh = $batch->fresh();
     expect($fresh->isLocked())->toBeTrue()
-        ->and($fresh->isProcessed())->toBeTrue();
+        ->and($fresh->status)->toBe('processing')
+        ->and($fresh->isProcessed())->toBeFalse();
 });
 
 test('processBatch marks batch as processed with no jobs when it has no notifications', function () {
@@ -269,7 +271,7 @@ test('processBatch dispatches a chain when batch contains zaak aangemaakt', func
 
     $service->processBatch($batch);
 
-    Bus::assertChained([HandleNotification::class]);
+    Bus::assertChained([HandleNotification::class, MarkBatchProcessed::class]);
 });
 
 test('processBatch chains one job per notification when batch contains zaak aangemaakt with other notifications', function () {
@@ -281,10 +283,10 @@ test('processBatch chains one job per notification when batch contains zaak aang
 
     $service->processBatch($batch);
 
-    Bus::assertChained([HandleNotification::class, HandleNotification::class]);
+    Bus::assertChained([HandleNotification::class, HandleNotification::class, MarkBatchProcessed::class]);
 });
 
-test('processBatch marks batch as processed after dispatching jobs', function () {
+test('processBatch leaves marking the batch as processed to the last job of the chain', function () {
     Bus::fake();
     $batch = makeBatch();
     makeNotification($batch, 'create', 'zaak');
@@ -292,7 +294,11 @@ test('processBatch marks batch as processed after dispatching jobs', function ()
 
     $service->processBatch($batch);
 
-    expect($batch->fresh()->isProcessed())->toBeTrue();
+    expect($batch->fresh()->isProcessed())->toBeFalse();
+    Bus::assertChained([
+        HandleNotification::class,
+        fn (MarkBatchProcessed $job): bool => $job->batch->is($batch),
+    ]);
 });
 
 // ─── processBatch – without zaak aangemaakt ──────────────────────────────────
@@ -306,7 +312,7 @@ test('processBatch dispatches one chained job per notification when no zaak aang
 
     $service->processBatch($batch);
 
-    Bus::assertChained([HandleNotification::class, HandleNotification::class]);
+    Bus::assertChained([HandleNotification::class, HandleNotification::class, MarkBatchProcessed::class]);
 });
 
 test('processBatch dispatches jobs on the configured queue', function () {
@@ -318,7 +324,7 @@ test('processBatch dispatches jobs on the configured queue', function () {
 
     $service->processBatch($batch);
 
-    Bus::assertChained([HandleNotification::class]);
+    Bus::assertChained([HandleNotification::class, MarkBatchProcessed::class]);
 });
 
 // ─── Batch model – hasResultaatAangemaakt ─────────────────────────────────────
@@ -391,5 +397,5 @@ test('processBatch chains resultaat as the last job', function () {
 
     $service->processBatch($batch);
 
-    Bus::assertChained([HandleNotification::class, HandleNotification::class, HandleNotification::class]);
+    Bus::assertChained([HandleNotification::class, HandleNotification::class, HandleNotification::class, MarkBatchProcessed::class]);
 });

@@ -13,6 +13,8 @@ The application handles four types of notifications:
 
 A cache-based timer groups all notifications for a single case that arrive within a configurable window. When the timer expires, notifications are processed as an ordered job chain via Laravel's `Bus::chain()`, guaranteeing that `create:zaak` always runs first.
 
+One exception: a document that is linked to a zaak while it is still being edited (status `in_bewerking`) does not wait for the batch. It is processed directly, as long as the zaak is already in Corsa. See [Direct route](#direct-route).
+
 For a detailed description of the batching logic and processing order, see [docs/batching_system.md](docs/batching_system.md) and [docs/notificaties.md](docs/notificaties.md).
 
 ## Architecture
@@ -20,8 +22,11 @@ For a detailed description of the batching logic and processing order, see [docs
 ```
 POST /api/v1/notifications (Sanctum)
   └─ IngestNotification (job)
-       └─ BatchingService: getOrCreateBatch() + addNotificationToBatch()
-            └─ Cache timer (NOTIFICATION_BATCH_TIMEOUT seconds, resets on each new notification)
+       ├─ BatchingService: getOrCreateBatch() + addNotificationToBatch()
+       │    └─ Cache timer (NOTIFICATION_BATCH_TIMEOUT seconds, resets on each new notification)
+       └─ ProcessDocumentDirectly (job, queue "direct"), only for a document linked while in_bewerking
+            ├─ zaak in Corsa: CorsaZaakdmsService::addDocumentToZaak() → voegZaakdocumentToe()
+            └─ zaak not in Corsa yet: moved to the batch of the zaak
 
 [Scheduler: every minute]
   └─ FlushExpiredBatches (job)
@@ -68,6 +73,29 @@ A notification that is accepted but not processed is stored as ignored, with a r
 - `inactive_zaaktype`: the zaak has a zaaktype whose mapping is not active.
 
 Ignored notifications keep their full payload, so they can be processed later, for example once a zaaktype mapping has been activated. Processing them again is not built yet.
+
+### Direct route
+
+Every notification is stored with a `route`: `batch` (the default) or `direct`.
+
+A `create:zaakinformatieobject` notification for a document with status `in_bewerking` takes the direct route. On ingest the application fetches the zaakinformatieobject and the document to read the status. Any other status, or a document that cannot be fetched, goes into the batch as before. A notification on the direct route is not added to a batch. The `ProcessDocumentDirectly` job handles it on the `direct` queue:
+
+- When the zaak is in Corsa, the document is added to it right away.
+- When the zaak is not in Corsa yet, the notification moves to the batch of the zaak (its route becomes `batch`), so the zaak is created first.
+- A connection error, a time-out (408), rate limiting (429) or a server error while fetching from the ZGW APIs or adding the document to Corsa is retried after 30 seconds, 2 minutes and 5 minutes. Any other error fails the job right away. A failed job stays visible in Horizon, and the notification is marked as failed (see [Failed notifications](#failed-notifications)).
+- An error while checking whether the zaak is in Corsa counts as "not in Corsa": the notification moves to the batch without a retry.
+
+Every document that is sent to Corsa, on either route, is recorded in `document_syncs` (document URL, zaak, the identificatie sent to Corsa, `versie`, and whether a placeholder was sent). A document that is already recorded for the same zaak is not sent again, so a notification that is delivered twice does not add the document twice. The check, the upload and the registration run under a cache lock per document URL, so this also holds when two jobs for the same document run at the same time (a repeated delivery, or the direct route and the batch route). The lock lasts at most 300 seconds, the job time-out in production. A job that does not get the lock tries again 15 seconds later and then finds the document in the register. Waiting for the lock does not count as an error: the direct job still fails at its fourth temporary error, and the batch job at its first error. The lock does not cover a time-out on the upload after which Corsa did store the document: a retry then sends it again.
+
+A document with status `in_bewerking` that has no content yet (no `inhoud`, or an empty download) and no `bestandsdelen` is sent to Corsa as a small placeholder text file. This applies on both routes, so it also covers such a document that ends up in a batch. Any other document without content is still refused. Replacing a placeholder with the real content needs processing of document changes, which is not built yet: until then a placeholder stays in Corsa.
+
+### Failed notifications
+
+When the job that processes a notification fails for good (after its last attempt, or right away on a permanent error), the notification gets `failed_at`, a short failure description and the id of the failed job. For an HTTP error the description only keeps the status, for a database error only the SQLSTATE; other messages are shortened, with long numbers and e-mail addresses masked. A later run that processes the notification, for example a retry from Horizon, clears these fields again.
+
+The admin panel shows each notification as processed, failed or not processed yet, and links a failed notification to its failed job in Horizon (opening in a new tab). Horizon keeps failed jobs for a limited time (`horizon.trim.failed`, a week by default); after that the link no longer works, but the failure description stays on the notification.
+
+A batch stays `processing` while its chain runs. The last job of the chain marks it as `processed`, so that only happens once every job before it has finished. In a batch chain the jobs after a failed job do not run, the last one included: the batch stays `processing`, the failed notification shows as failed, and the notifications after it stay "not processed yet".
 
 ## Technical Stack
 
@@ -126,6 +154,8 @@ Requests are only sent to the hosts of the base URLs and `ZGW_ALLOWED_HOSTS`. A 
 | `NOTIFICATION_BATCH_MAX_SIZE` | `100` | Maximum notifications in a single batch |
 | `NOTIFICATION_USE_QUEUE` | `true` | Whether to process via queue |
 | `NOTIFICATION_QUEUE` | `default` | Queue name for batch processing jobs |
+
+Documents on the direct route are processed on the `direct` queue. The Horizon supervisor works on both `direct` and `default` (`config/horizon.php`). With balancing enabled, Horizon keeps at least one worker process per queue, so a direct job does not wait behind a batch chain.
 
 ## Installation
 

@@ -2,8 +2,10 @@
 
 namespace App\Filament\Resources\Batches\Tables;
 
+use App\Models\Batch;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Grouping\Group;
 use Filament\Tables\Table;
@@ -24,7 +26,8 @@ class BatchesTable
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
                         'pending' => 'gray',
-                        'processing' => 'warning',
+                        // Not orange, so it is not confused with "Niet alles verwerkt".
+                        'processing' => 'info',
                         'processed' => 'success',
                         default => 'gray',
                     })
@@ -33,6 +36,8 @@ class BatchesTable
                     ->label('Notificaties')
                     ->counts('notifications')
                     ->sortable(),
+                self::failedNotificationsColumn(),
+                self::incompleteColumn(),
                 TextColumn::make('created_at')
                     ->label('Ontvangen')
                     ->dateTime()
@@ -67,6 +72,14 @@ class BatchesTable
                         'processing' => 'In verwerking',
                         'processed' => 'Verwerkt',
                     ]),
+                Filter::make('failed_notifications')
+                    ->label('Met mislukte notificaties')
+                    ->toggle()
+                    ->query(self::withFailedNotifications(...)),
+                Filter::make('incomplete')
+                    ->label('Onvolledig')
+                    ->toggle()
+                    ->query(self::incomplete(...)),
             ])
             ->recordActions([
                 ViewAction::make(),
@@ -74,5 +87,56 @@ class BatchesTable
             ->toolbarActions([])
             ->defaultSort('created_at', 'desc')
             ->poll('10s');
+    }
+
+    /**
+     * The number of notifications whose job failed for good, only when there are any. Derived from the
+     * notifications; the status of the batch itself does not change.
+     */
+    public static function failedNotificationsColumn(): TextColumn
+    {
+        return TextColumn::make('failed_notifications_count')
+            ->label('Mislukt')
+            ->state(fn (Batch $record): ?int => $record->failedNotificationsCount() ?: null)
+            ->badge()
+            ->color('danger')
+            ->icon('heroicon-o-x-circle')
+            ->tooltip('Notificaties waarvan de job definitief is mislukt')
+            ->sortable();
+    }
+
+    /**
+     * Shown for a batch that is marked as processed while a notification in it is not processed, not
+     * failed and not ignored. It does not say why.
+     */
+    public static function incompleteColumn(): TextColumn
+    {
+        return TextColumn::make('incomplete')
+            ->label('Onvolledig')
+            ->state(fn (Batch $record): ?string => $record->isIncomplete() ? 'Niet alles verwerkt' : null)
+            ->badge()
+            ->color('warning')
+            ->icon('heroicon-o-exclamation-triangle')
+            ->tooltip(fn (Batch $record): ?string => $record->isIncomplete()
+                ? sprintf('De batch is afgerond, maar %d notificatie(s) erin zijn niet verwerkt, niet mislukt en niet genegeerd.', $record->notProcessedNotificationsCount())
+                : null);
+    }
+
+    /**
+     * @param  Builder<Batch>  $query
+     * @return Builder<Batch>
+     */
+    private static function withFailedNotifications(Builder $query): Builder
+    {
+        return $query->withFailedNotifications();
+    }
+
+    /**
+     * @param  Builder<Batch>  $query
+     * @return Builder<Batch>
+     */
+    private static function incomplete(Builder $query): Builder
+    {
+        return $query->incomplete();
     }
 }

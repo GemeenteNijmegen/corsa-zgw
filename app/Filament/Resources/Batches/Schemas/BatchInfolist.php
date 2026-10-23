@@ -2,19 +2,21 @@
 
 namespace App\Filament\Resources\Batches\Schemas;
 
+use App\Models\Batch;
 use Filament\Infolists\Components\IconEntry;
-use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
-use Illuminate\Support\Collection;
 
 class BatchInfolist
 {
     public static function configure(Schema $schema): Schema
     {
         return $schema->components([
+            // Full width, so the notifications of the batch (the relation manager) follow below it as
+            // a table with room for every column and the record actions.
             Section::make('Batch details')
+                ->columnSpanFull()
                 ->columns(2)
                 ->schema([
                     TextEntry::make('zaak_identificatie')
@@ -24,7 +26,7 @@ class BatchInfolist
                         ->badge()
                         ->color(fn (string $state): string => match ($state) {
                             'pending' => 'gray',
-                            'processing' => 'warning',
+                            'processing' => 'info',
                             'processed' => 'success',
                             default => 'gray',
                         }),
@@ -32,7 +34,7 @@ class BatchInfolist
                         ->label('Ontvangen')
                         ->dateTime(),
                     TextEntry::make('locked_at')
-                        ->label('Vergrendeld')
+                        ->label('Vergrendeld op')
                         ->dateTime()
                         ->placeholder('—'),
                     TextEntry::make('processed_at')
@@ -43,60 +45,25 @@ class BatchInfolist
                         ->label('Vergrendeld')
                         ->state(fn ($record): bool => $record->isLocked())
                         ->boolean(),
-                ]),
-
-            Section::make('Notificaties')
-                ->schema([
-                    RepeatableEntry::make('notifications')
-                        ->label('')
-                        ->state(fn ($record): Collection => $record->notifications()
-                            ->get()
-                            ->sortBy(function ($notification): int {
-                                $actie = $notification->notification['actie'] ?? '';
-                                $resource = $notification->notification['resource'] ?? '';
-
-                                return match ("{$actie}:{$resource}") {
-                                    'create:zaak' => 0,
-                                    'create:resultaat' => 2,
-                                    default => 1,
-                                };
-                            })
-                            ->values()
-                        )
-                        ->schema([
-                            TextEntry::make('volgorde')
-                                ->label('Volgorde')
-                                ->state(function ($record): string {
-                                    $actie = $record->notification['actie'] ?? '';
-                                    $resource = $record->notification['resource'] ?? '';
-
-                                    return match ("{$actie}:{$resource}") {
-                                        'create:zaak' => '0',
-                                        'create:resultaat' => '2',
-                                        default => '1',
-                                    };
-                                }),
-                            TextEntry::make('type')
-                                ->label('Type')
-                                ->state(fn ($record): string => sprintf(
-                                    '%s:%s',
-                                    $record->notification['actie'] ?? '—',
-                                    $record->notification['resource'] ?? '—'
-                                )),
-                            TextEntry::make('aanmaakdatum')
-                                ->label('Aangemaakt')
-                                ->state(fn ($record): ?string => $record->notification['aanmaakdatum'] ?? null)
-                                ->dateTime('d-m-Y H:i:s')
-                                ->placeholder('—'),
-                            IconEntry::make('processed')
-                                ->label('Verwerkt')
-                                ->boolean(),
-                            TextEntry::make('processed_at')
-                                ->label('Verwerkt op')
-                                ->dateTime()
-                                ->placeholder('—'),
-                        ])
-                        ->columns(5),
+                    // Derived from the notifications, the same signals as in the batches overview.
+                    TextEntry::make('failed_notifications')
+                        ->label('Mislukte notificaties')
+                        ->state(fn (Batch $record): int => $record->failedNotificationsCount())
+                        ->badge()
+                        ->color('danger')
+                        ->icon('heroicon-o-x-circle')
+                        ->visible(fn (Batch $record): bool => $record->failedNotificationsCount() > 0),
+                    TextEntry::make('incomplete')
+                        ->label('Onvolledig')
+                        ->state('Niet alles verwerkt')
+                        ->badge()
+                        ->color('warning')
+                        ->icon('heroicon-o-exclamation-triangle')
+                        ->helperText(fn (Batch $record): string => sprintf(
+                            'De batch is afgerond, maar %d notificatie(s) erin zijn niet verwerkt, niet mislukt en niet genegeerd.',
+                            $record->notProcessedNotificationsCount(),
+                        ))
+                        ->visible(fn (Batch $record): bool => $record->isIncomplete()),
                 ]),
         ]);
     }

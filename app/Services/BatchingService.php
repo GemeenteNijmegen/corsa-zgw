@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Jobs\Notifications\HandleNotification;
+use App\Jobs\Notifications\MarkBatchProcessed;
 use App\Models\Batch;
 use App\Models\Notification;
 use Illuminate\Database\Eloquent\Model;
@@ -123,8 +124,7 @@ class BatchingService
             $this->processBatchWithoutZaakAangemaakt($batch, $sortedNotifications);
         }
 
-        // Mark batch as processed
-        $batch->markProcessed();
+        // The batch stays "processing" until the last job of the chain marks it as processed.
     }
 
     /**
@@ -164,8 +164,10 @@ class BatchingService
             $jobs[] = new HandleNotification($notification);
         }
 
-        // Dispatch the job chain
+        // Dispatch the job chain, ending with the job that marks the batch as processed
         if (! empty($jobs)) {
+            $jobs[] = new MarkBatchProcessed($batch);
+
             Bus::chain($jobs)
                 ->onQueue(config('batching.queue', 'default'))
                 ->dispatch();
@@ -192,8 +194,10 @@ class BatchingService
             $jobs[] = new HandleNotification($notification);
         }
 
-        // Dispatch all jobs in parallel
+        // Dispatch the job chain, ending with the job that marks the batch as processed
         if (! empty($jobs)) {
+            $jobs[] = new MarkBatchProcessed($batch);
+
             Bus::chain($jobs)
                 ->onQueue(config('batching.queue', 'default'))
                 ->dispatch();

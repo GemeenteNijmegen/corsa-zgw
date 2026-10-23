@@ -2,11 +2,9 @@
 
 namespace App\Filament\Resources\Batches\RelationManagers;
 
-use Filament\Actions\Action;
-use Filament\Infolists\Components\TextEntry;
+use App\Filament\Resources\Notifications\Schemas\NotificationPayloadSchema;
+use App\Filament\Resources\Notifications\Tables\NotificationsTable;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Schemas\Components\Section;
-use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -20,13 +18,21 @@ class NotificationsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query) => $query->orderByRaw(
-                "CASE
-                    WHEN notification->>'$.actie' = 'create' AND notification->>'$.resource' = 'zaak' THEN 0
-                    WHEN notification->>'$.actie' = 'create' AND notification->>'$.resource' = 'resultaat' THEN 2
-                    ELSE 1
-                END ASC"
-            ))
+            ->modifyQueryUsing(function (Builder $query): Builder {
+                // Let the query grammar write the JSON paths, so the order also holds on PostgreSQL,
+                // where the MySQL style path '$.actie' does not match.
+                $grammar = $query->getQuery()->getGrammar();
+                $actie = $grammar->wrap('notification->actie');
+                $resource = $grammar->wrap('notification->resource');
+
+                return $query->orderByRaw(
+                    "CASE
+                        WHEN {$actie} = 'create' AND {$resource} = 'zaak' THEN 0
+                        WHEN {$actie} = 'create' AND {$resource} = 'resultaat' THEN 2
+                        ELSE 1
+                    END ASC"
+                );
+            })
             ->columns([
                 TextColumn::make('sort_order')
                     ->label('Volgorde')
@@ -51,33 +57,17 @@ class NotificationsRelationManager extends RelationManager
                 TextColumn::make('aanmaakdatum')
                     ->label('Aangemaakt')
                     ->state(fn ($record): ?string => $record->notification['aanmaakdatum'] ?? null)
-                    ->dateTime('d-m-Y H:i:s')
+                    ->dateTime()
                     ->placeholder('—'),
-                IconColumn::make('processed')
-                    ->label('Verwerkt')
-                    ->boolean(),
+                NotificationsTable::statusColumn(),
                 TextColumn::make('processed_at')
                     ->label('Verwerkt op')
                     ->dateTime()
                     ->placeholder('—'),
             ])
             ->recordActions([
-                Action::make('view_payload')
-                    ->label('Bekijk payload')
-                    ->icon('heroicon-o-eye')
-                    ->infolist([
-                        Section::make('Notificatie payload')
-                            ->schema([
-                                TextEntry::make('notification')
-                                    ->label('JSON payload')
-                                    ->state(fn ($record): string => json_encode(
-                                        $record->notification,
-                                        JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE
-                                    ))
-                                    ->fontFamily('mono')
-                                    ->columnSpanFull(),
-                            ]),
-                    ]),
+                NotificationPayloadSchema::action(),
+                NotificationPayloadSchema::failedJobAction(),
             ])
             ->poll('10s');
     }

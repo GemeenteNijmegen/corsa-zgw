@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Enums\NotificationIgnoreReason;
+use App\Enums\NotificationRoute;
 use App\Models\Batch;
 use App\Models\Notification;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -74,6 +75,39 @@ class NotificationFactory extends Factory
             'processed' => false,
             'ignored_at' => now(),
             'ignored_reason' => $reason,
+        ]);
+    }
+
+    /**
+     * A notification on the direct route: a document linked to a zaak, processed without a batch.
+     */
+    public function direct(): static
+    {
+        return $this->state([
+            'batch_id' => null,
+            'route' => NotificationRoute::Direct,
+            'notification' => [
+                'actie' => 'create',
+                'kanaal' => 'zaken',
+                'resource' => 'zaakinformatieobject',
+                'hoofdObject' => 'https://openzaak.example.com/zaken/api/v1/zaken/'.fake()->uuid(),
+                'resourceUrl' => 'https://openzaak.example.com/zaken/api/v1/zaakinformatieobjecten/'.fake()->uuid(),
+                'aanmaakdatum' => now()->toIso8601String(),
+                'kenmerken' => [],
+            ],
+        ]);
+    }
+
+    /**
+     * A notification whose job failed for good, with a made-up job id.
+     */
+    public function failed(): static
+    {
+        return $this->state([
+            'processed' => false,
+            'failed_at' => now(),
+            'failure' => 'ConnectionException: Connection timed out',
+            'failed_job_id' => fake()->uuid(),
         ]);
     }
 

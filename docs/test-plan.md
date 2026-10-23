@@ -14,6 +14,10 @@ This document tracks the automated test coverage plan for corsa-zgw. Tests are g
 | `Zaak` and `Rol` value objects | ✅ `tests/Unit/ZaakTest.php` | `test/characterization-coverage` |
 | Admin panel access, `UserResource`, token creation | ✅ `tests/Feature/AdminAccessTest.php` | `test/characterization-coverage` |
 | Overview of ignored notifications (`IgnoredNotificationResource`) | ✅ `tests/Feature/IgnoredNotificationResourceTest.php` | `fix/notification-correctness` |
+| Direct route, `ProcessDocumentDirectly`, `document_syncs`, placeholder | ✅ `tests/Feature/DirectDocumentRouteTest.php` | `feat/direct-document-route` |
+| Notifications overview with route filter (`NotificationResource`) | ✅ `tests/Feature/NotificationResourceTest.php` | `feat/direct-document-route` |
+| Lock per document (concurrent deliveries) | ✅ `tests/Feature/DirectDocumentRouteTest.php` | `feat/direct-document-route` |
+| Failed notifications (`failed_at`, link to the failed job) | ✅ `tests/Feature/NotificationFailureTest.php`, `NotificationResourceTest.php`, `BatchResourceTest.php` | `feat/direct-document-route` |
 | `Batch` and `Notification` models, `ZaakEigenschap`, routes | ❌ | not yet |
 
 Line coverage after `test/characterization-coverage`: 92.5% in total, 95.6% for `CorsaZaakdmsService` (`pest --coverage` with pcov).

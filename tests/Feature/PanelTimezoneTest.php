@@ -103,7 +103,7 @@ test('the batches overview shows Amsterdam time', function () {
         ->assertDontSee('2026 10:00:00');
 });
 
-test('the batch page shows Amsterdam time, also for the aanmaakdatum from the payload', function () {
+test('the batch page shows Amsterdam time', function () {
     $batch = Batch::factory()->create([
         'zaak_identificatie' => 'ZAAK-0001',
         'created_at' => STORED_UTC,
@@ -114,20 +114,20 @@ test('the batch page shows Amsterdam time, also for the aanmaakdatum from the pa
 
     Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])
         ->assertSee('2026 11:00:00')
-        ->assertSee('02-01-2026 11:00:00')
         ->assertDontSee('10:00:00');
 });
 
-test('the notifications of a batch show Amsterdam time, also for the aanmaakdatum from the payload', function () {
+test('the notifications of a batch show Amsterdam time in the panel format, also for the aanmaakdatum from the payload', function () {
     $batch = Batch::factory()->create(['zaak_identificatie' => 'ZAAK-0001']);
-    notificationAtStoredTime(['batch_id' => $batch->id, 'processed' => true, 'processed_at' => STORED_UTC]);
+    $notification = notificationAtStoredTime(['batch_id' => $batch->id, 'processed' => true, 'processed_at' => STORED_UTC]);
 
     Livewire::test(NotificationsRelationManager::class, [
         'ownerRecord' => $batch,
         'pageClass' => ViewBatch::class,
     ])
-        ->assertSee('02-01-2026 11:00:00')
-        ->assertSee('2026 11:00:00')
+        ->assertTableColumnFormattedStateSet('aanmaakdatum', 'jan. 2, 2026 11:00:00', $notification)
+        ->assertTableColumnFormattedStateSet('processed_at', 'jan. 2, 2026 11:00:00', $notification)
+        ->assertDontSee('02-01-2026')
         ->assertDontSee('10:00:00');
 });
 
