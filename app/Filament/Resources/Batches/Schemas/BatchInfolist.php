@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Batches\Schemas;
 
+use App\Filament\Resources\Batches\Tables\BatchesTable;
 use App\Models\Batch;
 use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -24,12 +25,8 @@ class BatchInfolist
                     TextEntry::make('status')
                         ->label('Status')
                         ->badge()
-                        ->color(fn (string $state): string => match ($state) {
-                            'pending' => 'gray',
-                            'processing' => 'info',
-                            'processed' => 'success',
-                            default => 'gray',
-                        }),
+                        ->formatStateUsing(BatchesTable::statusLabel(...))
+                        ->color(BatchesTable::statusColor(...)),
                     TextEntry::make('created_at')
                         ->label('Ontvangen')
                         ->dateTime(),
@@ -64,6 +61,17 @@ class BatchInfolist
                             $record->notProcessedNotificationsCount(),
                         ))
                         ->visible(fn (Batch $record): bool => $record->isIncomplete()),
+                    TextEntry::make('stuck')
+                        ->label('Lang bezig')
+                        ->state('Lang in verwerking')
+                        ->badge()
+                        ->color('warning')
+                        ->icon('heroicon-o-clock')
+                        ->helperText(fn (): string => sprintf(
+                            'De batch is al langer dan %d minuten in verwerking zonder mislukte notificatie.',
+                            (int) config('batching.stuck_after_minutes', 30),
+                        ))
+                        ->visible(fn (Batch $record): bool => $record->isStuck()),
                 ]),
         ]);
     }

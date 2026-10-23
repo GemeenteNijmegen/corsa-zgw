@@ -30,4 +30,14 @@ return [
      * Queue name for batch processing jobs
      */
     'queue' => env('NOTIFICATION_QUEUE', 'default'),
+
+    /**
+     * Minutes after which a batch that is still processing, without a failed notification, is shown
+     * as taking long. A job in the chain waits up to 20 times 15 seconds (5 minutes) for a document
+     * that another job is sending, and a single attempt may run up to the worker time-out of
+     * 5 minutes, so a normal chain of a few jobs finishes well within 30 minutes, also with some
+     * wait in the queue. A batch with many documents can take longer; raise the value if that is
+     * normal for an environment.
+     */
+    'stuck_after_minutes' => env('NOTIFICATION_BATCH_STUCK_AFTER_MINUTES', 30),
 ];

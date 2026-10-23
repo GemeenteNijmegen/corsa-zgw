@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class BatchingService
 {
@@ -169,13 +170,8 @@ class BatchingService
             $jobs[] = new HandleNotification($notification);
         }
 
-        // Dispatch the job chain, ending with the job that marks the batch as processed
         if (! empty($jobs)) {
-            $jobs[] = new MarkBatchProcessed($batch);
-
-            Bus::chain($jobs)
-                ->onQueue(config('batching.queue', 'default'))
-                ->dispatch();
+            $this->dispatchChain($batch, $jobs);
         }
     }
 
@@ -199,14 +195,39 @@ class BatchingService
             $jobs[] = new HandleNotification($notification);
         }
 
-        // Dispatch the job chain, ending with the job that marks the batch as processed
         if (! empty($jobs)) {
-            $jobs[] = new MarkBatchProcessed($batch);
-
-            Bus::chain($jobs)
-                ->onQueue(config('batching.queue', 'default'))
-                ->dispatch();
+            $this->dispatchChain($batch, $jobs);
         }
+    }
+
+    /**
+     * Dispatch the job chain of a batch, ending with the job that marks the batch as processed.
+     *
+     * A chain stops at a job that fails for good, so the batch is marked as failed then. When the
+     * failed job later succeeds on a retry, the rest of the chain runs and its last job marks the
+     * batch as processed after all.
+     *
+     * @param  array<int, HandleNotification>  $jobs
+     */
+    private function dispatchChain(Batch $batch, array $jobs): void
+    {
+        $jobs[] = new MarkBatchProcessed($batch);
+
+        // The catch callback is serialized with the chain. It is static and only captures the id,
+        // so it carries neither this service nor the model.
+        $batchId = (string) $batch->id;
+
+        Bus::chain($jobs)
+            ->onQueue(config('batching.queue', 'default'))
+            ->catch(static function (Throwable $e) use ($batchId): void {
+                if (Batch::markFailedUnlessProcessed($batchId)) {
+                    Log::warning('Batch chain stopped at a failed job, batch marked as failed', [
+                        'batch_id' => $batchId,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            })
+            ->dispatch();
     }
 
     /**
