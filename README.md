@@ -117,7 +117,9 @@ When the job that processes a notification fails for good (after its last attemp
 
 The admin panel shows each notification as processed, failed or not processed yet, and links a failed notification to its failed job in Horizon (opening in a new tab). Horizon keeps failed jobs for a limited time (`horizon.trim.failed`, a week by default); after that the link no longer works, but the failure description stays on the notification.
 
-A batch stays `processing` while its chain runs. The last job of the chain marks it as `processed`, so that only happens once every job before it has finished. In a batch chain the jobs after a failed job do not run, the last one included: the batch stays `processing`, the failed notification shows as failed, and the notifications after it stay "not processed yet".
+A batch stays `processing` while its chain runs. The last job of the chain marks it as `processed`, so that only happens once every job before it has finished. In a batch chain the jobs after a failed job do not run, the last one included: the batch is marked as `failed` (shown as "Mislukt"), the failed notification shows as failed, and the notifications after it stay "not processed yet". When the failed job is retried from Horizon and succeeds, the rest of the chain runs and its last job marks the batch as `processed` after all; until then it stays `failed`. A batch that is already `processed` is never marked as failed.
+
+A batch can also stay `processing` without a failed job, for instance when a job is gone from the queue. Once it has been processing for longer than `NOTIFICATION_BATCH_STUCK_AFTER_MINUTES` (30 by default) without a failed notification, the admin panel flags it as "Lang in verwerking", in the batches overview (with a filter) and on the batch page. The flag is derived when reading; the status does not change. A job in the chain can wait up to 5 minutes for a document that another job is sending, and one attempt can run up to the worker time-out of 5 minutes, so a normal chain of a few jobs finishes well within the default. Raise the value for an environment where batches with many documents are normal.
 
 Two jobs for the same batch can run at the same time, for example when the queue is busy and the scheduler dispatches the batch again. The batch is locked with one conditional update (`locked_at` still empty), and only the job whose update changed the row builds the chain. Finding the open batch and linking a notification to it happen in one database transaction that reads the batch with a row lock, so on PostgreSQL a notification is either linked before the batch is locked and processed with it, or goes to a new batch. A batch job for a notification that is already processed or ignored does nothing, and the last job of a chain keeps the time the batch was first processed.
 
@@ -178,6 +180,7 @@ Requests are only sent to the hosts of the base URLs and `ZGW_ALLOWED_HOSTS`. A 
 | `NOTIFICATION_BATCH_MAX_SIZE` | `100` | Maximum notifications in a single batch |
 | `NOTIFICATION_USE_QUEUE` | `true` | Whether to process via queue |
 | `NOTIFICATION_QUEUE` | `default` | Queue name for batch processing jobs |
+| `NOTIFICATION_BATCH_STUCK_AFTER_MINUTES` | `30` | Minutes after which a batch that is still processing, without a failed notification, is flagged as taking long |
 
 Documents on the direct route (new links in bewerking and changes) are processed on the `direct` queue. The Horizon supervisor works on both `direct` and `default` (`config/horizon.php`). With balancing enabled, Horizon keeps at least one worker process per queue, so a direct job does not wait behind a batch chain.
 
