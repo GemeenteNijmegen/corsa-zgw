@@ -14,7 +14,6 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Grouping\Group;
 use Filament\Tables\Table;
-use Illuminate\Support\Str;
 
 class IgnoredNotificationsTable
 {
@@ -77,7 +76,7 @@ class IgnoredNotificationsTable
                     ->getSearchResultsUsing(fn (string $search): array => Notification::query()
                         ->ignored()
                         ->whereNotNull('zaak_identificatie')
-                        ->whereRaw('lower(zaak_identificatie) like ?', ['%'.Str::lower($search).'%'])
+                        ->whereLike('zaak_identificatie', '%'.$search.'%')
                         ->distinct()
                         ->orderBy('zaak_identificatie')
                         ->limit(50)
