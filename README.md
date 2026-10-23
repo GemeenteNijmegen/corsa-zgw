@@ -82,12 +82,20 @@ A `create:zaakinformatieobject` notification for a document with status `in_bewe
 
 - When the zaak is in Corsa, the document is added to it right away.
 - When the zaak is not in Corsa yet, the notification moves to the batch of the zaak (its route becomes `batch`), so the zaak is created first.
-- A connection error, a time-out (408), rate limiting (429) or a server error while fetching from the ZGW APIs or adding the document to Corsa is retried after 30 seconds, 2 minutes and 5 minutes. Any other error fails the job right away. A failed job stays visible in Horizon, and the notification stays unprocessed.
+- A connection error, a time-out (408), rate limiting (429) or a server error while fetching from the ZGW APIs or adding the document to Corsa is retried after 30 seconds, 2 minutes and 5 minutes. Any other error fails the job right away. A failed job stays visible in Horizon, and the notification is marked as failed (see [Failed notifications](#failed-notifications)).
 - An error while checking whether the zaak is in Corsa counts as "not in Corsa": the notification moves to the batch without a retry.
 
-Every document that is sent to Corsa, on either route, is recorded in `document_syncs` (document URL, zaak, the identificatie sent to Corsa, `versie`, and whether a placeholder was sent). A document that is already recorded for the same zaak is not sent again, so a notification that is delivered twice does not add the document twice, as long as the two deliveries are not processed at the same moment.
+Every document that is sent to Corsa, on either route, is recorded in `document_syncs` (document URL, zaak, the identificatie sent to Corsa, `versie`, and whether a placeholder was sent). A document that is already recorded for the same zaak is not sent again, so a notification that is delivered twice does not add the document twice. The check, the upload and the registration run under a cache lock per document URL, so this also holds when two jobs for the same document run at the same time (a repeated delivery, or the direct route and the batch route). The lock lasts at most 300 seconds, the job time-out in production. A job that does not get the lock tries again 15 seconds later and then finds the document in the register. The lock does not cover a time-out on the upload after which Corsa did store the document: a retry then sends it again.
 
 A document with status `in_bewerking` that has no content yet (no `inhoud`, or an empty download) and no `bestandsdelen` is sent to Corsa as a small placeholder text file. This applies on both routes, so it also covers such a document that ends up in a batch. Any other document without content is still refused. Replacing a placeholder with the real content needs processing of document changes, which is not built yet: until then a placeholder stays in Corsa.
+
+### Failed notifications
+
+When the job that processes a notification fails for good (after its last attempt, or right away on a permanent error), the notification gets `failed_at`, a short failure description and the id of the failed job. For an HTTP error the description only keeps the status; other messages are shortened, with long numbers and e-mail addresses masked. A later run that processes the notification, for example a retry from Horizon, clears these fields again.
+
+The admin panel shows each notification as processed, failed or not processed yet, and links a failed notification to its failed job in Horizon (opening in a new tab). Horizon keeps failed jobs for a limited time (`horizon.trim.failed`, a week by default); after that the link no longer works, but the failure description stays on the notification.
+
+In a batch chain the jobs after a failed job do not run. Their notifications stay "not processed yet" and are not marked as failed.
 
 ## Technical Stack
 
