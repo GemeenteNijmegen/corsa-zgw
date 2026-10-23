@@ -213,3 +213,16 @@ test('the notifications overview offers no actions that change anything', functi
         ->assertActionDoesNotExist(TestAction::make('edit')->table($notification))
         ->assertActionDoesNotExist(TestAction::make('delete')->table($notification));
 });
+
+// ─── Route badge ─────────────────────────────────────────────────────────────
+
+test('the route badge has the same colour in the table and in the view action', function () {
+    $notification = createDirectNotification(['zaak_identificatie' => 'ZAAK-0001']);
+    $directBadge = '/class="[^"]*fi-badge[^"]*fi-color-info[^"]*"[^>]*>\s*(?:<[^>]+>\s*)*Direct\b/s';
+
+    $component = Livewire::test(ListNotifications::class);
+    expect($component->html())->toMatch($directBadge);
+
+    $component->mountAction(TestAction::make('view_payload')->table($notification));
+    expect($component->getMountedActionModalHtml())->toMatch($directBadge);
+});

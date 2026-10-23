@@ -2,12 +2,13 @@
 
 namespace App\Enums;
 
+use Filament\Support\Contracts\HasColor;
 use Filament\Support\Contracts\HasLabel;
 
 /**
  * How a received notification is processed.
  */
-enum NotificationRoute: string implements HasLabel
+enum NotificationRoute: string implements HasColor, HasLabel
 {
     /** Collected in the batch of its zaak and processed when the batch timer expires. */
     case Batch = 'batch';
@@ -23,6 +24,17 @@ enum NotificationRoute: string implements HasLabel
         return match ($this) {
             self::Batch => 'Batch',
             self::Direct => 'Direct',
+        };
+    }
+
+    /**
+     * Badge colour, the same in every place the route is shown.
+     */
+    public function getColor(): string
+    {
+        return match ($this) {
+            self::Batch => 'gray',
+            self::Direct => 'info',
         };
     }
 }

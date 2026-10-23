@@ -34,11 +34,7 @@ class NotificationsTable
                     ->placeholder('—'),
                 TextColumn::make('route')
                     ->label('Route')
-                    ->badge()
-                    ->color(fn (NotificationRoute $state): string => match ($state) {
-                        NotificationRoute::Direct => 'info',
-                        NotificationRoute::Batch => 'gray',
-                    }),
+                    ->badge(),
                 TextColumn::make('type')
                     ->label('Type')
                     ->state(fn (Notification $record): string => self::type($record)),
