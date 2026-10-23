@@ -3,7 +3,9 @@
 use App\Exceptions\DocumentLockedException;
 use App\Jobs\Notifications\HandleNotification;
 use App\Jobs\Notifications\ProcessDocumentDirectly;
+use App\Models\Batch;
 use App\Models\Notification;
+use App\Services\BatchingService;
 use App\Services\CorsaZaakdmsService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Client\ConnectionException;
@@ -150,4 +152,78 @@ test('the batch job waits for the lock without failing, up to the duration of th
 
     expect(DB::table('jobs')->count())->toBe(0)
         ->and($notification->fresh()->failure)->toContain('MaxAttemptsExceededException');
+});
+
+// ─── Batch chain ─────────────────────────────────────────────────────────────
+
+/**
+ * @return array{0: Batch, 1: Notification, 2: Notification}
+ */
+function batchWithZaakAndStatus(): array
+{
+    $batch = Batch::factory()->pending()->create(['zaak_identificatie' => 'ZAAK-0001']);
+    $zaak = Notification::factory()->forZaak()->create(['batch_id' => $batch->id, 'zaak_identificatie' => 'ZAAK-0001']);
+    $status = Notification::factory()->create([
+        'batch_id' => $batch->id,
+        'zaak_identificatie' => 'ZAAK-0001',
+        'notification' => ['actie' => 'create', 'kanaal' => 'zaken', 'resource' => 'status'],
+    ]);
+
+    return [$batch, $zaak, $status];
+}
+
+test('a batch is marked as processed only after the last job of its chain, also when a job waited for the lock', function () {
+    [$batch, $zaak, $status] = batchWithZaakAndStatus();
+    $calls = 0;
+    $service = $this->mock(CorsaZaakdmsService::class);
+    $service->shouldReceive('processZaakAangemaakt')
+        ->andReturnUsing(function () use (&$calls) {
+            if (++$calls === 1) {
+                throw new DocumentLockedException;
+            }
+        });
+    $service->shouldReceive('processZaakPartialUpdate')->once();
+
+    app(BatchingService::class)->processBatch($batch);
+
+    // The first job waits for the lock: it is released, and the chain does not continue.
+    workOneJob('default');
+    expect($batch->fresh()->status)->toBe('processing')
+        ->and(DB::table('jobs')->count())->toBe(1)
+        ->and(DB::table('jobs')->value('payload'))->toContain('HandleNotification');
+
+    $this->travel(HandleNotification::LOCK_RETRY_SECONDS + 1)->seconds();
+    workOneJob('default');
+    expect($zaak->fresh()->processed)->toBeTrue()
+        ->and($batch->fresh()->status)->toBe('processing');
+
+    workOneJob('default');
+    expect($status->fresh()->processed)->toBeTrue()
+        ->and($batch->fresh()->status)->toBe('processing')
+        ->and(DB::table('jobs')->value('payload'))->toContain('MarkBatchProcessed');
+
+    workOneJob('default');
+    expect($batch->fresh()->status)->toBe('processed')
+        ->and($batch->fresh()->processed_at)->not->toBeNull()
+        ->and($batch->fresh()->isIncomplete())->toBeFalse()
+        ->and(DB::table('jobs')->count())->toBe(0);
+});
+
+test('a batch whose chain stops at a failed job stays processing, with the failure as its signal', function () {
+    [$batch, $zaak, $status] = batchWithZaakAndStatus();
+    $service = $this->mock(CorsaZaakdmsService::class);
+    $service->shouldReceive('processZaakAangemaakt')->once()->andThrow(new RuntimeException('Fo02 refused'));
+    $service->shouldNotReceive('processZaakPartialUpdate');
+
+    app(BatchingService::class)->processBatch($batch);
+
+    workOneJob('default');
+
+    $fresh = $batch->fresh();
+    expect(DB::table('jobs')->count())->toBe(0)
+        ->and($fresh->status)->toBe('processing')
+        ->and($fresh->processed_at)->toBeNull()
+        ->and($fresh->failedNotificationsCount())->toBe(1)
+        ->and($fresh->isIncomplete())->toBeFalse()
+        ->and($status->fresh()->status())->toBe(App\Enums\NotificationStatus::Pending);
 });

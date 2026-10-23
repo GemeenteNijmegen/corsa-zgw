@@ -95,7 +95,7 @@ When the job that processes a notification fails for good (after its last attemp
 
 The admin panel shows each notification as processed, failed or not processed yet, and links a failed notification to its failed job in Horizon (opening in a new tab). Horizon keeps failed jobs for a limited time (`horizon.trim.failed`, a week by default); after that the link no longer works, but the failure description stays on the notification.
 
-In a batch chain the jobs after a failed job do not run. Their notifications stay "not processed yet" and are not marked as failed.
+A batch stays `processing` while its chain runs. The last job of the chain marks it as `processed`, so that only happens once every job before it has finished. In a batch chain the jobs after a failed job do not run, the last one included: the batch stays `processing`, the failed notification shows as failed, and the notifications after it stay "not processed yet".
 
 ## Technical Stack
 
