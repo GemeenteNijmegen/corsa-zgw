@@ -4,16 +4,17 @@
 
 Corsa ZGW is an integration service that bridges [OpenNotificaties](https://open-notificaties.readthedocs.io/) (a Dutch government notification system) and Corsa ZaakDMS (a document management system). It receives case (zaak) notifications over an API, batches them per case, and processes them in the correct order to keep the DMS up to date.
 
-The application handles four types of notifications:
+The application handles five types of notifications:
 
 - **Zaak aangemaakt** (case created): always processed first to ensure the case exists in Corsa before any related data is added.
 - **Zaakstatus** (status update): updates the current status of an existing case in Corsa.
 - **Zaakinformatieobject** (document attached): downloads and uploads a document from OpenZaak to Corsa.
+- **Enkelvoudiginformatieobject** (document changed, on the `documenten` kanaal): sends the newest version of a document that is already in Corsa.
 - **Resultaat aangemaakt** (result registered): always processed last, closes the case in Corsa with the final outcome and end date.
 
 A cache-based timer groups all notifications for a single case that arrive within a configurable window. When the timer expires, notifications are processed as an ordered job chain via Laravel's `Bus::chain()`, guaranteeing that `create:zaak` always runs first.
 
-One exception: a document that is linked to a zaak while it is still being edited (status `in_bewerking`) does not wait for the batch. It is processed directly, as long as the zaak is already in Corsa. See [Direct route](#direct-route).
+Two exceptions do not wait for the batch: a document that is linked to a zaak while it is still being edited (status `in_bewerking`), and every change to a document. Both are processed directly, as long as the zaak (for a new link) or the document (for a change) is already in Corsa. See [Direct route](#direct-route).
 
 For a detailed description of the batching logic and processing order, see [docs/batching_system.md](docs/batching_system.md) and [docs/notificaties.md](docs/notificaties.md).
 
@@ -24,9 +25,12 @@ POST /api/v1/notifications (Sanctum)
   └─ IngestNotification (job)
        ├─ BatchingService: getOrCreateBatch() + addNotificationToBatch()
        │    └─ Cache timer (NOTIFICATION_BATCH_TIMEOUT seconds, resets on each new notification)
-       └─ ProcessDocumentDirectly (job, queue "direct"), only for a document linked while in_bewerking
-            ├─ zaak in Corsa: CorsaZaakdmsService::addDocumentToZaak() → voegZaakdocumentToe()
-            └─ zaak not in Corsa yet: moved to the batch of the zaak
+       └─ ProcessDocumentDirectly (job, queue "direct"), for a document linked while in_bewerking
+            │    ├─ zaak in Corsa: CorsaZaakdmsService::addDocumentToZaak() → voegZaakdocumentToe()
+            │    └─ zaak not in Corsa yet: moved to the batch of the zaak
+            └─ and for a change to a document (update, partial_update)
+                 ├─ document in Corsa: CorsaZaakdmsService::updateDocument() → updateZaakDocument()
+                 └─ document not in Corsa yet: checked again after 30 s, 2 min and 5 min, then moved to the batch
 
 [Scheduler: every minute]
   └─ FlushExpiredBatches (job)
@@ -35,12 +39,14 @@ POST /api/v1/notifications (Sanctum)
                  HandleNotification(create:zaak),            ← always first
                  HandleNotification(create:status),
                  HandleNotification(create:zaakinformatieobject),
+                 HandleNotification(update:enkelvoudiginformatieobject), ← after the links
                  HandleNotification(create:resultaat),        ← always last
                ])
                  └─ CorsaZaakdmsService
                       ├─ creeerZaak()
                       ├─ actualiseerZaakstatus()
                       ├─ voegZaakdocumentToe()
+                      ├─ updateZaakDocument()
                       └─ updateZaak()
 ```
 
@@ -54,23 +60,28 @@ Authorization: Bearer {sanctum-token}
 Content-Type: application/json
 ```
 
-Four notification types on the `zaken` kanaal are processed, all with `actie` `create`. See [docs/API-Call-mapping.md](docs/API-Call-mapping.md) for full payload examples.
+Four notification types on the `zaken` kanaal are processed, all with `actie` `create`, plus changes to a document on the `documenten` kanaal. See [docs/API-Call-mapping.md](docs/API-Call-mapping.md) for full payload examples.
 
-| `resource`              | Effect in Corsa                          | Order |
-|-------------------------|------------------------------------------|-------|
-| `zaak`                  | Creates a new zaak                       | First |
-| `status`                | Updates the zaak status                  | Middle |
-| `zaakinformatieobject`  | Uploads a document to the zaak           | Middle |
-| `resultaat`             | Closes the zaak with a final outcome     | Last |
+| Kanaal       | `actie`                     | `resource`                    | Effect in Corsa                          | Order in a batch |
+|--------------|-----------------------------|-------------------------------|------------------------------------------|------------------|
+| `zaken`      | `create`                    | `zaak`                        | Creates a new zaak                       | First |
+| `zaken`      | `create`                    | `status`                      | Updates the zaak status                  | Middle |
+| `zaken`      | `create`                    | `zaakinformatieobject`        | Uploads a document to the zaak           | Middle |
+| `documenten` | `update`, `partial_update`  | `enkelvoudiginformatieobject` | Sends the newest version of the document | After the middle group |
+| `zaken`      | `create`                    | `resultaat`                   | Closes the zaak with a final outcome     | Last |
+
+Within each group a batch keeps the order in which the notifications were received.
 
 The endpoint accepts every action the ZGW APIs publish (`create`, `update`, `partial_update` and `destroy`) on any kanaal and resource, and stores the optional `kenmerken` with the notification. Any other `actie` is rejected with a 422, as is a link that is not on a configured ZGW host.
 
 A notification that is accepted but not processed is stored as ignored, with a reason in `ignored_reason`, and never added to a batch:
 
-- `unsupported_channel`: the kanaal is not `zaken`.
-- `unsupported_action`: the combination of `actie` and `resource` is not in the table above.
+- `unsupported_channel`: the kanaal is not `zaken` or `documenten`.
+- `unsupported_action`: the combination of `actie` and `resource` is not in the table above. On the `documenten` kanaal that is a `create` or `destroy` of a document (a new document reaches Corsa through its link to a zaak), and anything on `gebruiksrechten` or `verzending`.
 - `unknown_zaaktype`: the zaak has a zaaktype without a mapping.
 - `inactive_zaaktype`: the zaak has a zaaktype whose mapping is not active.
+- `document_not_linked`: a changed document is not linked to any zaak. Once it is linked, the link sends the newest version.
+- `document_in_multiple_zaken`: a changed document is linked to more than one zaak with an active mapping. A warning is logged as well.
 
 Ignored notifications keep their full payload, so they can be processed later, for example once a zaaktype mapping has been activated. Processing them again is not built yet.
 
@@ -85,9 +96,20 @@ A `create:zaakinformatieobject` notification for a document with status `in_bewe
 - A connection error, a time-out (408), rate limiting (429) or a server error while fetching from the ZGW APIs or adding the document to Corsa is retried after 30 seconds, 2 minutes and 5 minutes. Any other error fails the job right away. A failed job stays visible in Horizon, and the notification is marked as failed (see [Failed notifications](#failed-notifications)).
 - An error while checking whether the zaak is in Corsa counts as "not in Corsa": the notification moves to the batch without a retry.
 
-Every document that is sent to Corsa, on either route, is recorded in `document_syncs` (document URL, zaak, the identificatie sent to Corsa, `versie`, and whether a placeholder was sent). A document that is already recorded for the same zaak is not sent again, so a notification that is delivered twice does not add the document twice. The check, the upload and the registration run under a cache lock per document URL, so this also holds when two jobs for the same document run at the same time (a repeated delivery, or the direct route and the batch route). The lock lasts at most 300 seconds, the job time-out in production. A job that does not get the lock tries again 15 seconds later and then finds the document in the register. Waiting for the lock does not count as an error: the direct job still fails at its fourth temporary error, and the batch job at its first error. The lock does not cover a time-out on the upload after which Corsa did store the document: a retry then sends it again.
+An `update` or `partial_update` on `enkelvoudiginformatieobject` (kanaal `documenten`) always takes the direct route. On ingest the application looks up the zaak through `GET {zaken}/zaakinformatieobjecten?informatieobject=<document>`, and only zaken whose zaaktype has an active mapping count. With exactly one such zaak the notification is stored on the direct route for that zaak; otherwise it is ignored (see the reasons above). The `ProcessDocumentDirectly` job then:
 
-A document with status `in_bewerking` that has no content yet (no `inhoud`, or an empty download) and no `bestandsdelen` is sent to Corsa as a small placeholder text file. This applies on both routes, so it also covers such a document that ends up in a batch. Any other document without content is still refused. Replacing a placeholder with the real content needs processing of document changes, which is not built yet: until then a placeholder stays in Corsa.
+- fetches the newest version of the document from the Documenten API, and skips it when `document_syncs` already has that `versie` or a newer one;
+- waits when `bestandsdelen` is not empty (the upload is not complete yet);
+- checks whether the document is in Corsa: first in `document_syncs`, and for a document without an entry (for example one added before the register existed) in the list of documents of the zaak in Corsa (`geefLijstZaakdocumenten`), matched on the identificatie of the document;
+- sends it with `updateZaakDocument`, always with the content from the Documenten API and the same metadata as when the document was added, and records the new `versie` in `document_syncs`.
+
+When the document is not in Corsa yet, or its upload is not complete, the job checks again after 30 seconds, 2 minutes and 5 minutes. A document that is still not in Corsa after that moves to the batch of the zaak, where the link that adds it comes first; there the change fails visibly if the document is still missing. An upload that is still not complete fails the job. Waiting does not count as an error. A change that ends up in a batch is processed with the same checks; a batch job waits for an incomplete upload the same way as for the lock of a document.
+
+The list of documents in Corsa is read as the zaak object with one `heeftRelevant` per document and the identificatie under `gerelateerde`. That shape still has to be confirmed against a test environment of Corsa. If Corsa answers the list with a fault message, or with an answer without a zaak object, the document counts as not in Corsa (an HTTP or connection error is handled like any other error of the job), so the change ends up failed in the batch rather than being sent under a wrong identificatie.
+
+Every document that is sent to Corsa, on either route, is recorded in `document_syncs` (document URL, zaak, the identificatie sent to Corsa, `versie`, and whether a placeholder was sent). A change updates the entry, and is sent under the identificatie and for the zaak recorded there. A document that is already recorded for the same zaak is not sent again, so a notification that is delivered twice does not add the document twice. The check, the upload and the registration run under a cache lock per document URL, so this also holds when two jobs for the same document run at the same time (a repeated delivery, the direct route and the batch route, or a change while the document is being added). The lock lasts at most 300 seconds, the job time-out in production. A job that does not get the lock tries again 15 seconds later and then finds the document in the register. Waiting for the lock does not count as an error: the direct job still fails at its fourth temporary error, and the batch job at its first error. The lock does not cover a time-out on the upload after which Corsa did store the document: a retry then sends it again.
+
+A document with status `in_bewerking` that has no content yet (no `inhoud`, or an empty download) and no `bestandsdelen` is sent to Corsa as a small placeholder text file. This applies on both routes, so it also covers such a document that ends up in a batch. Any other document without content is still refused. The first change with real content replaces the placeholder. A change that still has no content while the document is `in_bewerking` is skipped and the placeholder stays; a change without content for a document with another status fails.
 
 ### Failed notifications
 
@@ -155,7 +177,7 @@ Requests are only sent to the hosts of the base URLs and `ZGW_ALLOWED_HOSTS`. A 
 | `NOTIFICATION_USE_QUEUE` | `true` | Whether to process via queue |
 | `NOTIFICATION_QUEUE` | `default` | Queue name for batch processing jobs |
 
-Documents on the direct route are processed on the `direct` queue. The Horizon supervisor works on both `direct` and `default` (`config/horizon.php`). With balancing enabled, Horizon keeps at least one worker process per queue, so a direct job does not wait behind a batch chain.
+Documents on the direct route (new links in bewerking and changes) are processed on the `direct` queue. The Horizon supervisor works on both `direct` and `default` (`config/horizon.php`). With balancing enabled, Horizon keeps at least one worker process per queue, so a direct job does not wait behind a batch chain.
 
 ## Installation
 
