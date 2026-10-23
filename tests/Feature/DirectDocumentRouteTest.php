@@ -599,3 +599,32 @@ test('a document linked while in_bewerking reaches the document management syste
         ->and(Batch::count())->toBe(0)
         ->and(DocumentSync::sole()->placeholder)->toBeTrue();
 });
+
+test('a direct notification is not lost when moving it to the batch fails halfway', function () {
+    fakeDirectApis(directDocument());
+    $zaakdms = $this->mock(Zaakdms::class);
+    $zaakdms->shouldReceive('geefZaakDetails')->twice()->andThrow(new Exception('not found'));
+    $zaakdms->shouldNotReceive('voegZaakdocumentToe');
+
+    $notification = makeDirectNotification();
+
+    // The first attempt fails while linking the notification to a batch.
+    $failingBatching = Mockery::mock(BatchingService::class);
+    $failingBatching->shouldReceive('getOrCreateBatch')->andThrow(new RuntimeException('database unavailable'));
+    $first = (new ProcessDocumentDirectly($notification))->withFakeQueueInteractions();
+
+    expect(fn () => $first->handle(app(CorsaZaakdmsService::class), $failingBatching))
+        ->toThrow(RuntimeException::class, 'database unavailable');
+
+    expect($notification->fresh()->route)->toBe(NotificationRoute::Direct)
+        ->and($notification->fresh()->batch_id)->toBeNull();
+
+    // The retry moves it to the batch of the zaak.
+    runDirectJob($notification)->assertNotFailed();
+
+    $notification->refresh();
+    $batch = Batch::sole();
+    expect($notification->route)->toBe(NotificationRoute::Batch)
+        ->and($notification->batch_id)->toBe($batch->id)
+        ->and(app(BatchingService::class)->hasActiveTimer($batch))->toBeTrue();
+});

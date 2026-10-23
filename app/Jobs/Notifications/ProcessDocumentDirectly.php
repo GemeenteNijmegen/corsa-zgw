@@ -4,6 +4,7 @@ namespace App\Jobs\Notifications;
 
 use App\Enums\DocumentSyncOutcome;
 use App\Enums\NotificationRoute;
+use App\Models\Batch;
 use App\Models\Notification;
 use App\Services\BatchingService;
 use App\Services\CorsaZaakdmsService;
@@ -11,6 +12,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 use Woweb\Zgw\Exceptions\ApiRequestException;
@@ -124,12 +126,24 @@ class ProcessDocumentDirectly implements ShouldQueue
     /**
      * The zaak is not in the document management system yet. The batch of the zaak adds the zaak
      * before the document, so the notification is processed there.
+     *
+     * The route and the batch change together, so a failure halfway leaves the notification on the
+     * direct route and a retry moves it again. The batch timer starts after that change.
      */
     private function moveToBatch(BatchingService $batchingService): void
     {
-        $this->notification->update(['route' => NotificationRoute::Batch]);
+        $batch = DB::transaction(function () use ($batchingService): Batch {
+            $batch = $batchingService->getOrCreateBatch($this->notification->zaak_identificatie);
 
-        $batch = $batchingService->getOrCreateBatch($this->notification->zaak_identificatie);
+            $this->notification->update([
+                'route' => NotificationRoute::Batch,
+                'batch_id' => $batch->id,
+            ]);
+
+            return $batch;
+        });
+
+        // The notification is already linked, so this only starts the timer of the batch.
         $batchingService->addNotificationToBatch($this->notification, $batch);
 
         Log::info('Zaak not in Corsa yet, direct notification moved to the batch of the zaak', [
