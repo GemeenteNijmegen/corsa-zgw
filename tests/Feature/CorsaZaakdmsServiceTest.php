@@ -348,7 +348,7 @@ test('processZaakAangemaakt leaves out the initiator when the zaak has no initia
 });
 
 test('processZaakAangemaakt fails with a validation error from the zaakdms client when the zaak has no initiator role', function () {
-    // The zaakdms client requires an initiator, so the zaak is refused before any request is sent.
+    // The zaakdms client requires an initiator, so the zaak is refused before the create request is sent.
     ZaaktypeMapping::factory()->create([
         'zaaktype_url' => ZGW_ZAAKTYPE_URL,
         'corsa_zaaktype_code' => '1001',
