@@ -13,6 +13,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class BatchResource extends Resource
 {
@@ -23,6 +24,20 @@ class BatchResource extends Resource
     protected static ?string $navigationLabel = 'Notificatie-batches';
 
     protected static ?string $recordTitleAttribute = 'zaak_identificatie';
+
+    /**
+     * Counts the failed notifications and the notifications that are not processed yet in the same
+     * query, for the overview as well as the batch page, so the signals do not query per row.
+     *
+     * @return Builder<Batch>
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        /** @var Builder<Batch> $query */
+        $query = parent::getEloquentQuery();
+
+        return $query->withNotificationOutcome();
+    }
 
     public static function infolist(Schema $schema): Schema
     {

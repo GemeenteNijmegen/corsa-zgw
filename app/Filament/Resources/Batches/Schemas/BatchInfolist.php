@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Batches\Schemas;
 
+use App\Models\Batch;
 use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
@@ -44,6 +45,25 @@ class BatchInfolist
                         ->label('Vergrendeld')
                         ->state(fn ($record): bool => $record->isLocked())
                         ->boolean(),
+                    // Derived from the notifications, the same signals as in the batches overview.
+                    TextEntry::make('failed_notifications')
+                        ->label('Mislukte notificaties')
+                        ->state(fn (Batch $record): int => $record->failedNotificationsCount())
+                        ->badge()
+                        ->color('danger')
+                        ->icon('heroicon-o-x-circle')
+                        ->visible(fn (Batch $record): bool => $record->failedNotificationsCount() > 0),
+                    TextEntry::make('incomplete')
+                        ->label('Onvolledig')
+                        ->state('Niet alles verwerkt')
+                        ->badge()
+                        ->color('warning')
+                        ->icon('heroicon-o-exclamation-triangle')
+                        ->helperText(fn (Batch $record): string => sprintf(
+                            'De batch staat op verwerkt, maar %d notificatie(s) zijn niet verwerkt, niet mislukt en niet genegeerd.',
+                            $record->notProcessedNotificationsCount(),
+                        ))
+                        ->visible(fn (Batch $record): bool => $record->isIncomplete()),
                 ]),
         ]);
     }

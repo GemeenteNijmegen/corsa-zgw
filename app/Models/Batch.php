@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -26,10 +27,95 @@ class Batch extends Model
 
     /**
      * Get all notifications in this batch
+     *
+     * @return HasMany<Notification, $this>
      */
     public function notifications(): HasMany
     {
         return $this->hasMany(Notification::class, 'batch_id');
+    }
+
+    /**
+     * Add the number of failed notifications and of notifications that are not processed yet, in the
+     * same query, so an overview does not count them per row.
+     *
+     * @param  Builder<Batch>  $query
+     * @return Builder<Batch>
+     */
+    public function scopeWithNotificationOutcome(Builder $query): Builder
+    {
+        return $query->withCount([
+            'notifications as failed_notifications_count' => self::failedForGood(...),
+            'notifications as not_processed_notifications_count' => self::notProcessedYet(...),
+        ]);
+    }
+
+    /**
+     * Batches with at least one notification whose job failed for good.
+     *
+     * @param  Builder<Batch>  $query
+     * @return Builder<Batch>
+     */
+    public function scopeWithFailedNotifications(Builder $query): Builder
+    {
+        return $query->whereHas('notifications', self::failedForGood(...));
+    }
+
+    /**
+     * Batches that are marked as processed while a notification in them is not processed, not failed
+     * and not ignored.
+     *
+     * @param  Builder<Batch>  $query
+     * @return Builder<Batch>
+     */
+    public function scopeIncomplete(Builder $query): Builder
+    {
+        return $query->where('status', 'processed')
+            ->whereHas('notifications', self::notProcessedYet(...));
+    }
+
+    /**
+     * @param  Builder<Notification>  $query
+     * @return Builder<Notification>
+     */
+    private static function failedForGood(Builder $query): Builder
+    {
+        return $query->failedForGood();
+    }
+
+    /**
+     * @param  Builder<Notification>  $query
+     * @return Builder<Notification>
+     */
+    private static function notProcessedYet(Builder $query): Builder
+    {
+        return $query->notProcessedYet();
+    }
+
+    public function failedNotificationsCount(): int
+    {
+        if (array_key_exists('failed_notifications_count', $this->getAttributes())) {
+            return (int) $this->getAttribute('failed_notifications_count');
+        }
+
+        return $this->notifications()->failedForGood()->count();
+    }
+
+    public function notProcessedNotificationsCount(): int
+    {
+        if (array_key_exists('not_processed_notifications_count', $this->getAttributes())) {
+            return (int) $this->getAttribute('not_processed_notifications_count');
+        }
+
+        return $this->notifications()->notProcessedYet()->count();
+    }
+
+    /**
+     * Marked as processed while a notification in it is not processed, not failed and not ignored.
+     */
+    public function isIncomplete(): bool
+    {
+        return $this->status === 'processed' && $this->notProcessedNotificationsCount() > 0;
     }
 
     /**

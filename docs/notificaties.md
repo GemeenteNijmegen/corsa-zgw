@@ -62,6 +62,8 @@ Mislukt de job die een notificatie verwerkt definitief (na de laatste poging, of
 
 In een batchketen draaien de jobs na een mislukte job niet. Hun notificaties blijven "Nog niet verwerkt" en worden niet als mislukt gemarkeerd.
 
+Het batchoverzicht en de batchpagina tonen welke batches niet helemaal goed zijn gegaan, afgeleid uit de notificaties; de status van de batch zelf verandert niet. "Mislukt" (rood) geeft het aantal notificaties in de batch met een definitief mislukte job, en staat er alleen als dat er minstens één is. "Niet alles verwerkt" (oranje) staat bij een batch met status `processed` waarin een notificatie niet verwerkt, niet mislukt en niet genegeerd is, zoals de jobs na een mislukte job in een keten; de oorzaak zegt het niet. Het overzicht is op beide te filteren ("Met mislukte notificaties" en "Onvolledig").
+
 ## Afhandeling
 Van elke batch wordt een 'job chain' gedefinieerd in de applicatie (Laravel). 
 

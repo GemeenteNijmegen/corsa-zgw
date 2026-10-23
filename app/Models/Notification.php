@@ -144,4 +144,31 @@ class Notification extends Model
         return $query->whereNotNull('ignored_at')
             ->when($reason, fn (Builder $query) => $query->where('ignored_reason', $reason));
     }
+
+    /**
+     * Scope to notifications whose job failed for good: the ones with the status "Mislukt".
+     *
+     * @param  Builder<Notification>  $query
+     * @return Builder<Notification>
+     */
+    public function scopeFailedForGood(Builder $query): Builder
+    {
+        return $query->whereNull('ignored_at')
+            ->where('processed', false)
+            ->whereNotNull('failed_at');
+    }
+
+    /**
+     * Scope to notifications that are not processed, not failed and not ignored: the ones with the
+     * status "Nog niet verwerkt".
+     *
+     * @param  Builder<Notification>  $query
+     * @return Builder<Notification>
+     */
+    public function scopeNotProcessedYet(Builder $query): Builder
+    {
+        return $query->whereNull('ignored_at')
+            ->where('processed', false)
+            ->whereNull('failed_at');
+    }
 }
