@@ -8,6 +8,8 @@ Het Filament admin-paneel biedt een read-only overzicht van alle ontvangen batch
 
 Genegeerde notificaties (zie "Acties en genegeerde notificaties" hieronder) komen niet in een batch en staan daarom in een eigen read-only overzicht, "Genegeerde notificaties" via `/admin/ignored-notifications` (ook sectie "Monitoring"). Daar staan per notificatie het moment van negeren, de zaak (leeg als die niet is opgehaald), de reden, het kanaal, de actie en de resource, nieuwste eerst. Het overzicht is doorzoekbaar op zaak, filterbaar op reden en zaak, en te groeperen per zaak met het aantal per groep. Per notificatie toont "Bekijk payload" de opgeslagen gegevens, inclusief `kenmerken`, en het moment van ontvangst als dat afwijkt van het moment van negeren (alleen bij een notificatie die al in een batch zat). Heeft de zaak van een batch genegeerde notificaties, dan linkt de batchpagina naar dat overzicht, gefilterd op die zaak. Het overzicht wijzigt niets: opnieuw verwerken, bewerken of verwijderen kan er niet.
 
+Notificaties op de directe route (zie "Directe route voor documenten in bewerking" hieronder) komen ook niet in een batch. Daarom is er het read-only overzicht "Notificaties" via `/admin/notifications` (sectie "Monitoring"). Daarin staan alle notificaties die niet genegeerd zijn, nieuwste eerst, met de zaak, de route (Batch of Direct), het type, of ze verwerkt zijn en een link naar de batch als die er is. Het overzicht is doorzoekbaar op zaak en filterbaar op route, verwerkt en zaak. "Bekijk payload" toont de opgeslagen gegevens. Ook dit overzicht wijzigt niets.
+
 ## Volgordelijkheid van berichten
 Omdat notificaties in onvoorspelbare volgorde binnenkomen, én verwerking tijd kost, moeten notificaties (soms) in een specifieke volgorde worden verwerkt.
 Daarnaast is het zo dat onvoorspelbaar is welke notificaties binnenkomen en binnen moeten zijn voor een taak gestart kan worden. Daarom verwerken we
@@ -41,6 +43,18 @@ Een notificatie die wel wordt aangenomen maar niet verwerkt, krijgt een 200 en w
 Bij de laatste twee is het zaaknummer bekend en opgeslagen. Omdat de volledige notificatie bewaard blijft, kan die later alsnog verwerkt worden, bijvoorbeeld nadat de mapping is geactiveerd. Dat opnieuw verwerken is nog niet gebouwd.
 
 Komt een niet ondersteunde combinatie toch in een batch terecht (een notificatie van vóór deze controle), dan markeert de verwerking die als genegeerd met reden `unsupported_action`. De job faalt dan niet, zodat de rest van de batch doorloopt.
+
+## Directe route voor documenten in bewerking
+Elke notificatie heeft een route: `batch` (standaard) of `direct`.
+
+Een `create:zaakinformatieobject` waarvan het gekoppelde document de status `in_bewerking` heeft, wacht niet op de batch van de zaak. Bij binnenkomst haalt de applicatie de koppeling en het document op om de status te lezen. Bij elke andere status, of als het document niet op te halen is, gaat de notificatie zoals altijd de batch in. Een notificatie op de directe route komt niet in een batch; de job `ProcessDocumentDirectly` verwerkt hem op de queue `direct`:
+- Staat de zaak al in Corsa, dan gaat het document er meteen in.
+- Staat de zaak nog niet in Corsa, dan gaat de notificatie de batch van de zaak in (de route wordt `batch`). De batch maakt eerst de zaak aan.
+- Een verbindingsfout, time-out, 429 of serverfout wordt opnieuw geprobeerd na 30 seconden, 2 minuten en 5 minuten. Elke andere fout laat de job meteen mislukken. Een mislukte job is zichtbaar in Horizon; de notificatie blijft onverwerkt.
+
+Elk document dat naar Corsa gaat, via welke route ook, komt in de tabel `document_syncs`: de URL van het document, de zaak, de identificatie die naar Corsa ging, de `versie` en of er een placeholder is gestuurd. Staat een document daar al voor dezelfde zaak, dan wordt het niet nog eens gestuurd. Zo voegt een notificatie die twee keer binnenkomt het document niet twee keer toe.
+
+Een document met status `in_bewerking` zonder inhoud (geen `inhoud`, of een lege download) en zonder `bestandsdelen` gaat als klein tekstbestand met de tekst "Tijdelijk bestand" naar Corsa. Elk ander document zonder inhoud blijft geweigerd.
 
 ## Afhandeling
 Van elke batch wordt een 'job chain' gedefinieerd in de applicatie (Laravel). 

@@ -13,6 +13,8 @@ The application handles four types of notifications:
 
 A cache-based timer groups all notifications for a single case that arrive within a configurable window. When the timer expires, notifications are processed as an ordered job chain via Laravel's `Bus::chain()`, guaranteeing that `create:zaak` always runs first.
 
+One exception: a document that is linked to a zaak while it is still being edited (status `in_bewerking`) does not wait for the batch. It is processed directly, as long as the zaak is already in Corsa. See [Direct route](#direct-route).
+
 For a detailed description of the batching logic and processing order, see [docs/batching_system.md](docs/batching_system.md) and [docs/notificaties.md](docs/notificaties.md).
 
 ## Architecture
@@ -20,8 +22,11 @@ For a detailed description of the batching logic and processing order, see [docs
 ```
 POST /api/v1/notifications (Sanctum)
   └─ IngestNotification (job)
-       └─ BatchingService: getOrCreateBatch() + addNotificationToBatch()
-            └─ Cache timer (NOTIFICATION_BATCH_TIMEOUT seconds, resets on each new notification)
+       ├─ BatchingService: getOrCreateBatch() + addNotificationToBatch()
+       │    └─ Cache timer (NOTIFICATION_BATCH_TIMEOUT seconds, resets on each new notification)
+       └─ ProcessDocumentDirectly (job, queue "direct"), only for a document linked while in_bewerking
+            ├─ zaak in Corsa: CorsaZaakdmsService::addDocumentToZaak() → voegZaakdocumentToe()
+            └─ zaak not in Corsa yet: moved to the batch of the zaak
 
 [Scheduler: every minute]
   └─ FlushExpiredBatches (job)
@@ -68,6 +73,20 @@ A notification that is accepted but not processed is stored as ignored, with a r
 - `inactive_zaaktype`: the zaak has a zaaktype whose mapping is not active.
 
 Ignored notifications keep their full payload, so they can be processed later, for example once a zaaktype mapping has been activated. Processing them again is not built yet.
+
+### Direct route
+
+Every notification is stored with a `route`: `batch` (the default) or `direct`.
+
+A `create:zaakinformatieobject` notification for a document with status `in_bewerking` takes the direct route. On ingest the application fetches the zaakinformatieobject and the document to read the status. Any other status, or a document that cannot be fetched, goes into the batch as before. A notification on the direct route is not added to a batch. The `ProcessDocumentDirectly` job handles it on the `direct` queue:
+
+- When the zaak is in Corsa, the document is added to it right away.
+- When the zaak is not in Corsa yet, the notification moves to the batch of the zaak (its route becomes `batch`), so the zaak is created first.
+- A connection error, a time-out, rate limiting (429) or a server error is retried after 30 seconds, 2 minutes and 5 minutes. Any other error fails the job right away. A failed job stays visible in Horizon, and the notification stays unprocessed.
+
+Every document that is sent to Corsa, on either route, is recorded in `document_syncs` (document URL, zaak, the identificatie sent to Corsa, `versie`, and whether a placeholder was sent). A document that is already recorded for the same zaak is not sent again, so a notification that is delivered twice does not add the document twice.
+
+A document with status `in_bewerking` that has no content yet (no `inhoud`, or an empty download) and no `bestandsdelen` is sent to Corsa as a small placeholder text file. Any other document without content is still refused.
 
 ## Technical Stack
 
@@ -126,6 +145,8 @@ Requests are only sent to the hosts of the base URLs and `ZGW_ALLOWED_HOSTS`. A 
 | `NOTIFICATION_BATCH_MAX_SIZE` | `100` | Maximum notifications in a single batch |
 | `NOTIFICATION_USE_QUEUE` | `true` | Whether to process via queue |
 | `NOTIFICATION_QUEUE` | `default` | Queue name for batch processing jobs |
+
+Documents on the direct route are processed on the `direct` queue. The Horizon supervisor works on both `direct` and `default` (`config/horizon.php`). With balancing enabled, Horizon keeps at least one worker process per queue, so a direct job does not wait behind a batch chain.
 
 ## Installation
 
