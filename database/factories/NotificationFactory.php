@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\NotificationIgnoreReason;
 use App\Models\Batch;
 use App\Models\Notification;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -60,6 +61,19 @@ class NotificationFactory extends Factory
                 'resourceUrl' => 'https://openzaak.example.com/zaken/api/v1/resultaten/'.fake()->uuid(),
                 'aanmaakdatum' => now()->toIso8601String(),
             ],
+        ]);
+    }
+
+    /**
+     * An ignored notification is stored without a batch.
+     */
+    public function ignored(NotificationIgnoreReason $reason = NotificationIgnoreReason::UnknownZaaktype): static
+    {
+        return $this->state([
+            'batch_id' => null,
+            'processed' => false,
+            'ignored_at' => now(),
+            'ignored_reason' => $reason,
         ]);
     }
 
