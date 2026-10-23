@@ -47,7 +47,7 @@ Een notificatie die wel wordt aangenomen maar niet verwerkt, krijgt een 200 en w
 
 Op kanaal `documenten` valt ook een `create` of `destroy` van een document onder `unsupported_action` (een nieuw document gaat via de koppeling aan een zaak naar Corsa; verwijderen wordt nog niet verwerkt), net als alles op `gebruiksrechten` en `verzending`.
 
-Bij de laatste twee is het zaaknummer bekend en opgeslagen. Omdat de volledige notificatie bewaard blijft, kan die later alsnog verwerkt worden, bijvoorbeeld nadat de mapping is geactiveerd. Dat opnieuw verwerken is nog niet gebouwd.
+Bij `unknown_zaaktype` en `inactive_zaaktype` is het zaaknummer bekend en opgeslagen (bij een documentwijziging alleen als het document aan precies één zaak hangt). Omdat de volledige notificatie bewaard blijft, kan die later alsnog verwerkt worden, bijvoorbeeld nadat de mapping is geactiveerd. Dat opnieuw verwerken is nog niet gebouwd.
 
 Komt een niet ondersteunde combinatie toch in een batch terecht (een notificatie van vóór deze controle), dan markeert de verwerking die als genegeerd met reden `unsupported_action`. De job faalt dan niet, zodat de rest van de batch doorloopt.
 

@@ -357,9 +357,9 @@ class CorsaZaakdmsService
      */
     public function updateDocument(Notification $notification): DocumentSyncOutcome
     {
-        $documentUrl = $notification->notification['resourceUrl']
-            ?? $notification->notification['hoofdObject']
-            ?? null;
+        // The hoofdObject of a change is the document. The zaak was chosen on ingest from the same
+        // URL, so the document that is sent is always the one whose zaak was looked up.
+        $documentUrl = $notification->notification['hoofdObject'] ?? null;
 
         if (! $documentUrl) {
             Log::warning('Missing document url for document update', [

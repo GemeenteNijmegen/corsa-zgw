@@ -7,25 +7,22 @@ use Illuminate\Contracts\Support\Arrayable;
 final readonly class OpenNotification implements Arrayable
 {
     /**
-     * The kanalen this application processes.
+     * Per kanaal this application processes, the actie:resource combinations it processes there.
      *
-     * @var list<string>
-     */
-    public const SUPPORTED_KANALEN = ['zaken', 'documenten'];
-
-    /**
-     * The actie:resource combinations on the supported kanalen that this application processes.
-     * The resource names differ per kanaal, so one list covers both.
-     *
-     * @var list<string>
+     * @var array<string, list<string>>
      */
     public const SUPPORTED_ACTIONS = [
-        'create:zaak',
-        'create:status',
-        'create:zaakinformatieobject',
-        'create:resultaat',
-        ...self::DOCUMENT_UPDATE_ACTIONS,
+        'zaken' => [
+            'create:zaak',
+            'create:status',
+            'create:zaakinformatieobject',
+            'create:resultaat',
+        ],
+        self::DOCUMENTEN_KANAAL => self::DOCUMENT_UPDATE_ACTIONS,
     ];
+
+    /** The kanaal of changes to documents. */
+    public const DOCUMENTEN_KANAAL = 'documenten';
 
     /**
      * The changes to a document (PUT and PATCH) that are sent to the document management system.
@@ -57,7 +54,7 @@ final readonly class OpenNotification implements Arrayable
 
     public function isSupportedKanaal(): bool
     {
-        return in_array($this->kanaal, self::SUPPORTED_KANALEN, true);
+        return array_key_exists($this->kanaal, self::SUPPORTED_ACTIONS);
     }
 
     /**
@@ -65,7 +62,8 @@ final readonly class OpenNotification implements Arrayable
      */
     public function isDocumentUpdate(): bool
     {
-        return self::isDocumentUpdateAction($this->actie, $this->resource);
+        return $this->kanaal === self::DOCUMENTEN_KANAAL
+            && self::isDocumentUpdateAction($this->actie, $this->resource);
     }
 
     public static function isDocumentUpdateAction(?string $actie, ?string $resource): bool
@@ -75,7 +73,7 @@ final readonly class OpenNotification implements Arrayable
 
     public function isSupportedAction(): bool
     {
-        return in_array("{$this->actie}:{$this->resource}", self::SUPPORTED_ACTIONS, true);
+        return in_array("{$this->actie}:{$this->resource}", self::SUPPORTED_ACTIONS[$this->kanaal] ?? [], true);
     }
 
     public function toArray(): array

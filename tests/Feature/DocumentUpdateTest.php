@@ -349,6 +349,27 @@ test('other actions on the documenten kanaal are ignored without fetching anythi
     'verzending' => ['partial_update', 'verzending'],
 ]);
 
+test('an action is only processed on its own kanaal', function (string $kanaal, string $actie, string $resource) {
+    Queue::fake();
+    Http::fake();
+
+    ingestUpd(new OpenNotification(
+        actie: $actie,
+        kanaal: $kanaal,
+        resource: $resource,
+        hoofdObject: UPD_EIO_URL,
+        resourceUrl: UPD_EIO_URL,
+        aanmaakdatum: '2026-01-15T10:00:00Z',
+    ));
+
+    expect(Notification::sole()->ignored_reason)->toBe(NotificationIgnoreReason::UnsupportedAction);
+    Http::assertNothingSent();
+    Queue::assertNotPushed(ProcessDocumentDirectly::class);
+})->with([
+    'change to a document on the zaken kanaal' => ['zaken', 'update', 'enkelvoudiginformatieobject'],
+    'zaak on the documenten kanaal' => ['documenten', 'create', 'zaak'],
+]);
+
 test('a change to a document whose link points outside the configured hosts fails the ingest', function () {
     Queue::fake();
     Http::fake([UPD_ZIO_LIST_URL.'*' => Http::response([updLink('https://elsewhere.example.org/zaken/api/v1/zaken/1')])]);
@@ -595,17 +616,70 @@ test('a document counts as not in the document management system when its zaak c
     'answer without a zaak object' => [fn () => new TypeError('Return value must be of type SimpleXMLElement, null returned')],
 ]);
 
-test('a connection error while listing the documents of the zaak is retried as a temporary error', function () {
+test('a connection or server error while listing the documents of the zaak is retried as a temporary error', function (Closure $error, string $class) {
+    Queue::fake();
     fakeUpdApis(updDocument());
     $zaakdms = $this->mock(Zaakdms::class);
-    $zaakdms->shouldReceive('geefLijstZaakdocumenten')->once()->andThrow(new ConnectionException('timed out'));
+    $zaakdms->shouldReceive('geefLijstZaakdocumenten')->once()->andThrow($error());
 
     $notification = makeUpdNotification();
     $job = (new ProcessDocumentDirectly($notification))->withFakeQueueInteractions();
 
     expect(fn () => $job->handle(app(CorsaZaakdmsService::class), app(BatchingService::class)))
-        ->toThrow(ConnectionException::class);
+        ->toThrow($class);
     $job->assertNotFailed();
+    Queue::assertNothingPushed();
+})->with([
+    'connection error' => [fn () => new ConnectionException('timed out'), ConnectionException::class],
+    'server error' => [fn () => new Illuminate\Http\Client\RequestException(
+        new Illuminate\Http\Client\Response(new GuzzleHttp\Psr7\Response(503))
+    ), Illuminate\Http\Client\RequestException::class],
+]);
+
+test('a change is sent for the zaak and under the identificatie in the register', function () {
+    fakeUpdApis(updDocument(['versie' => 2]));
+    registerUpdDocument([
+        'versie' => 1,
+        'zaak_identificatie' => UPD_OTHER_ZAAK_IDENTIFICATIE,
+        'corsa_identificatie' => 'DOC-CORSA-2026-0001',
+    ]);
+    $zaakdms = $this->mock(Zaakdms::class);
+    $zaakdms->shouldNotReceive('geefLijstZaakdocumenten');
+    captureUpdUpload($zaakdms, $options, $content);
+
+    // The notification has another zaak and ZGW another identificatie than the register.
+    runUpdJob(makeUpdNotification())->assertNotFailed();
+
+    expect($options['identificatie'])->toBe('DOC-CORSA-2026-0001')
+        ->and($options['zaak'])->toBe(['identificatie' => UPD_OTHER_ZAAK_IDENTIFICATIE]);
+
+    $sync = DocumentSync::sole();
+    expect($sync->zaak_identificatie)->toBe(UPD_OTHER_ZAAK_IDENTIFICATIE)
+        ->and($sync->corsa_identificatie)->toBe('DOC-CORSA-2026-0001')
+        ->and($sync->versie)->toBe(2);
+});
+
+test('a change fetches, locks and registers the document of its hoofdObject, the one whose zaak was looked up', function () {
+    $otherDocumentUrl = 'https://openzaak.example.com/documenten/api/v1/enkelvoudiginformatieobjecten/00000000-0000-0000-0000-000000000529';
+    fakeUpdApis(updDocument(['versie' => 2]));
+    Http::fake([$otherDocumentUrl.'*' => Http::response(updDocument(['url' => $otherDocumentUrl, 'versie' => 9]))]);
+    registerUpdDocument();
+    $zaakdms = $this->mock(Zaakdms::class);
+    captureUpdUpload($zaakdms, $options, $content);
+
+    $notification = Notification::create([
+        'zaak_identificatie' => UPD_ZAAK_IDENTIFICATIE,
+        'route' => NotificationRoute::Direct,
+        'notification' => [...updOpenNotification()->toArray(), 'resourceUrl' => $otherDocumentUrl],
+        'processed' => false,
+    ]);
+
+    runUpdJob($notification)->assertNotFailed();
+
+    Http::assertSent(fn (Request $request) => $request->url() === UPD_EIO_URL);
+    Http::assertNotSent(fn (Request $request) => str_starts_with($request->url(), $otherDocumentUrl));
+    expect(DocumentSync::sole()->document_url)->toBe(UPD_EIO_URL)
+        ->and(DocumentSync::sole()->versie)->toBe(2);
 });
 
 test('a change waits while another job sends the same document', function () {
@@ -721,15 +795,18 @@ function updBatchWithAllTypes(Batch $batch): array
         ]);
     };
 
-    // Created in an order that differs from the processing order on purpose.
-    return [
-        'resultaat' => $make('create', 'resultaat', 50),
-        'update' => $make('update', 'enkelvoudiginformatieobject', 40),
-        'partial_update' => $make('partial_update', 'enkelvoudiginformatieobject', 5),
-        'link' => $make('create', 'zaakinformatieobject', 30),
-        'status' => $make('create', 'status', 10),
-        'zaak' => $make('create', 'zaak', 1),
-    ];
+    // Created in an order that differs from the processing order on purpose. Within a group the
+    // notification that is created later (and so has the higher ordered id) was received earlier,
+    // so the order of receipt and the order of the ids differ.
+    $made = [];
+    $made['resultaat'] = $make('create', 'resultaat', 50);
+    $made['partial_update'] = $make('partial_update', 'enkelvoudiginformatieobject', 5);
+    $made['update'] = $make('update', 'enkelvoudiginformatieobject', 40);
+    $made['status'] = $make('create', 'status', 10);
+    $made['link'] = $make('create', 'zaakinformatieobject', 30);
+    $made['zaak'] = $make('create', 'zaak', 1);
+
+    return $made;
 }
 
 test('a batch processes the zaak first, then the other notifications, then the changes to documents and the resultaat last, each group in order of receipt', function () {
