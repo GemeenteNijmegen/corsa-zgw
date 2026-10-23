@@ -18,6 +18,7 @@ use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\Support\Facades\FilamentTimezone;
 use Filament\Widgets\AccountWidget;
 use Filament\Widgets\FilamentInfoWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
@@ -29,6 +30,17 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AdminPanelProvider extends PanelProvider
 {
+    /**
+     * Timezone in which the panel shows dates and times. Timestamps are still stored in the
+     * application timezone (UTC); only the display is converted.
+     */
+    public const DISPLAY_TIMEZONE = 'Europe/Amsterdam';
+
+    public function boot(): void
+    {
+        FilamentTimezone::set(self::DISPLAY_TIMEZONE);
+    }
+
     public function panel(Panel $panel): Panel
     {
         return $panel

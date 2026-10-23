@@ -271,8 +271,8 @@ test('the view action shows the aanmaakdatum in the same format as the other dat
 
     Livewire::test(ListIgnoredNotifications::class)
         ->mountAction(TestAction::make('view_payload')->table($notification))
-        ->assertMountedActionModalSee('2, 2026 10:00:00')
-        ->assertMountedActionModalSee('3, 2026 09:30:00')
+        ->assertMountedActionModalSee('2, 2026 11:00:00')
+        ->assertMountedActionModalSee('3, 2026 10:30:00')
         ->assertMountedActionModalDontSee('02-01-2026');
 });
 
@@ -293,7 +293,7 @@ test('the view action shows when a notification was received only when that diff
     Livewire::test(ListIgnoredNotifications::class)
         ->mountAction(TestAction::make('view_payload')->table($ignoredLater))
         ->assertMountedActionModalSee('Ontvangen')
-        ->assertMountedActionModalSee('3, 2026 08:00:00');
+        ->assertMountedActionModalSee('3, 2026 09:00:00');
 });
 
 test('the view action handles a notification stored without kenmerken', function () {

@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\Batches\RelationManagers;
 
-use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -51,15 +50,8 @@ class NotificationsRelationManager extends RelationManager
                     )),
                 TextColumn::make('aanmaakdatum')
                     ->label('Aangemaakt')
-                    ->state(function ($record): ?string {
-                        $aanmaakdatum = $record->notification['aanmaakdatum'] ?? null;
-
-                        if ($aanmaakdatum === null) {
-                            return null;
-                        }
-
-                        return Carbon::parse($aanmaakdatum)->format('d-m-Y H:i:s');
-                    })
+                    ->state(fn ($record): ?string => $record->notification['aanmaakdatum'] ?? null)
+                    ->dateTime('d-m-Y H:i:s')
                     ->placeholder('—'),
                 IconColumn::make('processed')
                     ->label('Verwerkt')

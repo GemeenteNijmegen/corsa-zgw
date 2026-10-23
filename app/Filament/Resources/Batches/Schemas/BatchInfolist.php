@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\Batches\Schemas;
 
-use Carbon\Carbon;
 use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -86,15 +85,8 @@ class BatchInfolist
                                 )),
                             TextEntry::make('aanmaakdatum')
                                 ->label('Aangemaakt')
-                                ->state(function ($record): ?string {
-                                    $aanmaakdatum = $record->notification['aanmaakdatum'] ?? null;
-
-                                    if ($aanmaakdatum === null) {
-                                        return null;
-                                    }
-
-                                    return Carbon::parse($aanmaakdatum)->format('d-m-Y H:i:s');
-                                })
+                                ->state(fn ($record): ?string => $record->notification['aanmaakdatum'] ?? null)
+                                ->dateTime('d-m-Y H:i:s')
                                 ->placeholder('—'),
                             IconEntry::make('processed')
                                 ->label('Verwerkt')
