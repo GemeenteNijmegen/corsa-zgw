@@ -21,12 +21,16 @@ Line coverage after `test/characterization-coverage`: 92.5% in total, 95.6% for 
 
 The tests added in `test/characterization-coverage` record the current behaviour, including behaviour that is wrong. A test whose name starts with `known bug:` asserts the faulty behaviour on purpose. The change that fixes the bug should flip that test to the correct behaviour.
 
-- `known bug: Zaak cannot be constructed when the expanded rollen contain no initiator`
-- `known bug: processZaakAangemaakt fails with a TypeError when the zaak has no initiator role`
-- `known bug: processZaakAangemaakt fails when the natural person initiator has no geslachtsnaam field`
-- `known bug: an unsupported action/resource combination is only logged and marked as processed`
+All four `known bug:` tests have been flipped in `fix/notification-correctness`:
 
-Tests whose name contains `currently` record behaviour that may be intended but deserves a decision, such as the endpoint accepting `update` and `delete` notifications that are never handled.
+| Was | Now |
+|---|---|
+| `known bug: Zaak cannot be constructed when the expanded rollen contain no initiator` | `Zaak has no initiator when the expanded rollen contain no initiator` |
+| `known bug: processZaakAangemaakt fails with a TypeError when the zaak has no initiator role` | `processZaakAangemaakt leaves out the initiator when the zaak has no initiator role` |
+| `known bug: processZaakAangemaakt fails when the natural person initiator has no geslachtsnaam field` | `processZaakAangemaakt uses onbekend when the natural person initiator has no geslachtsnaam field` |
+| `known bug: an unsupported action/resource combination is only logged and marked as processed` | `it marks an unsupported action/resource combination as ignored instead of processed` |
+
+Tests whose name contains `currently` record behaviour that may be intended but deserves a decision. The endpoint test for `update` and `delete` became `it accepts every action the ZGW APIs publish`; `delete` is now rejected.
 
 All tests that touch the ZGW APIs fake them with `Http::fake()`, so they describe the outgoing requests and their effect rather than calls on the ZGW client library. The ZGW host and client credentials for the tests are set in `phpunit.xml` through the `OPENZAAK_*` variables, which also covers the fallback in `config/zgw.php`.
 

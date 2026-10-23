@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\NotificationIgnoreReason;
 use App\Jobs\Notifications\IngestNotification;
 use App\Models\Batch;
 use App\Models\Notification;
@@ -39,7 +40,7 @@ function fakeZaakResponse(array $zaak): void
     ]);
 }
 
-test('it ignores notification when zaaktype has no active mapping', function () {
+test('it stores the notification as ignored when the zaaktype has no mapping', function () {
     Log::spy();
 
     $openNotification = new OpenNotification(
@@ -60,14 +61,20 @@ test('it ignores notification when zaaktype has no active mapping', function () 
 
     Http::assertSentCount(1);
     $batchingServiceSpy->shouldNotHaveReceived('getOrCreateBatch');
-    expect(Notification::count())->toBe(0);
+
+    $notification = Notification::sole();
+    expect($notification->ignored_reason)->toBe(NotificationIgnoreReason::UnknownZaaktype)
+        ->and($notification->zaak_identificatie)->toBe('ZAAK-2024-001')
+        ->and($notification->batch_id)->toBeNull()
+        ->and($notification->processed)->toBeFalse()
+        ->and($notification->notification)->toBe($openNotification->toArray());
 
     Log::shouldHaveReceived('warning')
         ->with('Zaaktype not active or unknown, ignoring notification', Mockery::any())
         ->once();
 });
 
-test('it ignores notification when zaaktype mapping exists but is inactive', function () {
+test('it stores the notification as ignored when the zaaktype mapping exists but is inactive', function () {
     Log::spy();
 
     $zaaktypeUrl = 'https://openzaak.example.com/catalogi/api/v1/zaaktypen/aaa-111';
@@ -96,7 +103,15 @@ test('it ignores notification when zaaktype mapping exists but is inactive', fun
 
     Http::assertSentCount(1);
     $batchingServiceSpy->shouldNotHaveReceived('getOrCreateBatch');
-    expect(Notification::count())->toBe(0);
+
+    $notification = Notification::sole();
+    expect($notification->ignored_reason)->toBe(NotificationIgnoreReason::InactiveZaaktype)
+        ->and($notification->zaak_identificatie)->toBe('ZAAK-2024-001')
+        ->and($notification->batch_id)->toBeNull()
+        ->and($notification->processed)->toBeFalse();
+
+    expect(Notification::ignored(NotificationIgnoreReason::InactiveZaaktype)->count())->toBe(1)
+        ->and(Notification::ignored(NotificationIgnoreReason::UnknownZaaktype)->count())->toBe(0);
 });
 
 test('it processes notification when zaaktype has an active mapping', function () {

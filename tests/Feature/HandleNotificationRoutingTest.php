@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\NotificationIgnoreReason;
 use App\Jobs\Notifications\HandleNotification;
 use App\Models\Batch;
 use App\Models\Notification;
@@ -52,7 +53,8 @@ test('it routes each supported create notification to the matching service metho
 
     $fresh = $notification->fresh();
     expect($fresh->processed)->toBeTrue()
-        ->and($fresh->processed_at)->not->toBeNull();
+        ->and($fresh->processed_at)->not->toBeNull()
+        ->and($fresh->isIgnored())->toBeFalse();
 })->with([
     'zaak' => ['zaak', 'processZaakAangemaakt'],
     'status' => ['status', 'processZaakPartialUpdate'],
@@ -60,13 +62,14 @@ test('it routes each supported create notification to the matching service metho
     'resultaat' => ['resultaat', 'processResultaatAangemaakt'],
 ]);
 
-test('known bug: an unsupported action/resource combination is only logged and marked as processed', function (string $actie, string $resource) {
+test('it marks an unsupported action/resource combination as ignored instead of processed', function (string $actie, string $resource) {
     $notification = makeRoutedNotification($actie, $resource);
 
     $service = $this->mock(CorsaZaakdmsService::class);
     $service->shouldNotReceive('processZaakAangemaakt', 'processZaakPartialUpdate', 'processDocumentAangemaakt', 'processResultaatAangemaakt');
 
-    runHandleNotification($notification);
+    $job = (new HandleNotification($notification))->withFakeQueueInteractions();
+    app()->call([$job, 'handle']);
 
     Log::shouldHaveReceived('warning')
         ->with('Unknown notification action/resource combination', Mockery::on(
@@ -74,10 +77,19 @@ test('known bug: an unsupported action/resource combination is only logged and m
         ))
         ->once();
 
-    // Current behaviour: the notification is silently treated as done, so it is never retried.
-    expect($notification->fresh()->processed)->toBeTrue();
+    // The job neither fails nor releases, so the rest of the batch chain still runs.
+    $job->assertNotFailed();
+    $job->assertNotReleased();
+
+    $fresh = $notification->fresh();
+    expect($fresh->processed)->toBeFalse()
+        ->and($fresh->processed_at)->toBeNull()
+        ->and($fresh->isIgnored())->toBeTrue()
+        ->and($fresh->ignored_reason)->toBe(NotificationIgnoreReason::UnsupportedAction);
 })->with([
     'update:zaak' => ['update', 'zaak'],
+    'partial_update:zaak' => ['partial_update', 'zaak'],
+    'destroy:zaakinformatieobject' => ['destroy', 'zaakinformatieobject'],
     'delete:zaakinformatieobject' => ['delete', 'zaakinformatieobject'],
 ]);
 

@@ -49,7 +49,7 @@ Authorization: Bearer {sanctum-token}
 Content-Type: application/json
 ```
 
-Three notification types on the `zaken` kanaal are accepted. See [docs/API-Call-mapping.md](docs/API-Call-mapping.md) for full payload examples.
+Four notification types on the `zaken` kanaal are processed, all with `actie` `create`. See [docs/API-Call-mapping.md](docs/API-Call-mapping.md) for full payload examples.
 
 | `resource`              | Effect in Corsa                          | Order |
 |-------------------------|------------------------------------------|-------|
@@ -57,6 +57,17 @@ Three notification types on the `zaken` kanaal are accepted. See [docs/API-Call-
 | `status`                | Updates the zaak status                  | Middle |
 | `zaakinformatieobject`  | Uploads a document to the zaak           | Middle |
 | `resultaat`             | Closes the zaak with a final outcome     | Last |
+
+The endpoint accepts every action the ZGW APIs publish (`create`, `update`, `partial_update` and `destroy`) on any kanaal and resource, and stores the optional `kenmerken` with the notification. Any other `actie` is rejected with a 422, as is a link that is not on a configured ZGW host.
+
+A notification that is accepted but not processed is stored as ignored, with a reason in `ignored_reason`, and never added to a batch:
+
+- `unsupported_channel`: the kanaal is not `zaken`.
+- `unsupported_action`: the combination of `actie` and `resource` is not in the table above.
+- `unknown_zaaktype`: the zaak has a zaaktype without a mapping.
+- `inactive_zaaktype`: the zaak has a zaaktype whose mapping is not active.
+
+Ignored notifications keep their full payload, so they can be processed later, for example once a zaaktype mapping has been activated. Processing them again is not built yet.
 
 ## Technical Stack
 

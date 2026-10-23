@@ -22,13 +22,18 @@ class NotificationRequest extends FormRequest
      */
     public function rules(): array
     {
+        // Every kanaal and resource is accepted: a well-formed notification that this
+        // application does not process is acknowledged and stored as ignored, so the
+        // sender does not keep retrying it. The actie is limited to the actions the
+        // ZGW APIs publish, including partial_update for a PATCH.
         return [
-            'actie' => 'required|string|in:create,update,delete',
-            'kanaal' => 'required|string|in:zaken,objecten',
-            'resource' => 'required|string|in:zaak,status,zaakinformatieobject,resultaat',
+            'actie' => 'required|string|in:create,update,partial_update,destroy',
+            'kanaal' => 'required|string|max:255',
+            'resource' => 'required|string|max:255',
             'hoofdObject' => ['bail', 'required', 'url', app(ConfiguredZgwHost::class)],
             'resourceUrl' => ['bail', 'required', 'url', app(ConfiguredZgwHost::class)],
             'aanmaakdatum' => 'required|date',
+            'kenmerken' => 'sometimes|nullable|array',
         ];
     }
 }

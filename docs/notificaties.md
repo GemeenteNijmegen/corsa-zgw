@@ -13,15 +13,30 @@ notificaties als volgt:
 - Als een nieuwe notificatie binnenkomt voor die zaak terwijl de timer loopt herstarten we de timer
 - Als de timer afloopt starten we verwerking van de notificaties, op een logische volgorde
 
-Voor het bepalen van de volgorde hanteren we de volgende types notificaties die we willen verwerken:
-- Zaak aangemaakt
-- Zaakstatus aan zaak toegevoegd
-- Rol aan zaak toegevoegd
-- Document aan zaak toegevoegd
+Voor het bepalen van de volgorde hanteren we de volgende types notificaties die we verwerken (allemaal op kanaal `zaken` met actie `create`):
+- Zaak aangemaakt (`zaak`)
+- Zaakstatus aan zaak toegevoegd (`status`)
+- Document aan zaak toegevoegd (`zaakinformatieobject`)
+- Resultaat aan zaak toegevoegd (`resultaat`), altijd als laatste
+
+Een rol die aan een zaak wordt toegevoegd wordt niet verwerkt; zo'n notificatie wordt als genegeerd opgeslagen (zie hieronder).
 
 De 'zaak aangemaakt' notificatie moet altijd als eerste worden verwerkt. Andere notificaties kunnen daarna parallel worden verwerkt. Als in een 
 notificatiebatch (gedefinieerd als de set notificaties die binnen een timer-periode binnen zijn) géén zaak aangemaakt zit kunnen de notificaties parallel
 worden verwerkt, anders moet eerst de 'zaak aangemaakt'-notificatie worden afgehandeld.
+
+## Acties en genegeerde notificaties
+Het endpoint neemt elke actie aan die de ZGW API's publiceren: `create`, `update`, `partial_update` (een PATCH) en `destroy`. Kanaal en resource zijn vrij. Een andere actie, of een link die niet op een geconfigureerde ZGW-host staat, geeft een 422. De optionele `kenmerken` uit het bericht worden met de notificatie opgeslagen.
+
+Een notificatie die wel wordt aangenomen maar niet verwerkt, krijgt een 200 en wordt opgeslagen als genegeerd: `ignored_at` is gezet, `processed` blijft `false` en de notificatie komt niet in een batch. De reden staat in `ignored_reason`:
+- `unsupported_channel`: het kanaal is niet `zaken`. De zaak wordt niet opgehaald.
+- `unsupported_action`: de combinatie van actie en resource wordt niet verwerkt, bijvoorbeeld `update:zaak`, `destroy:zaak` of `create:rol`. De zaak wordt niet opgehaald, omdat die na een `destroy` niet meer bestaat.
+- `unknown_zaaktype`: het zaaktype van de zaak heeft geen mapping.
+- `inactive_zaaktype`: het zaaktype van de zaak heeft een mapping die niet actief is.
+
+Bij de laatste twee is het zaaknummer bekend en opgeslagen. Omdat de volledige notificatie bewaard blijft, kan die later alsnog verwerkt worden, bijvoorbeeld nadat de mapping is geactiveerd. Dat opnieuw verwerken is nog niet gebouwd.
+
+Komt een niet ondersteunde combinatie toch in een batch terecht (een notificatie van vóór deze controle), dan markeert de verwerking die als genegeerd met reden `unsupported_action`. De job faalt dan niet, zodat de rest van de batch doorloopt.
 
 ## Afhandeling
 Van elke batch wordt een 'job chain' gedefinieerd in de applicatie (Laravel). 

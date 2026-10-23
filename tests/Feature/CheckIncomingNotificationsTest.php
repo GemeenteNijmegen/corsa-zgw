@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\NotificationIgnoreReason;
 use App\Jobs\Notifications\IngestNotification;
 use App\Models\Batch;
 use App\Models\Notification;
@@ -15,15 +16,47 @@ uses(Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 beforeEach(fn () => Http::preventStrayRequests());
 
-test('it skips processing when kanaal is not zaken', function () {
+test('it stores a notification on another kanaal as ignored without fetching anything', function () {
     Http::fake();
 
     $openNotification = new OpenNotification(
         actie: 'create',
         kanaal: 'documenten',
-        resource: 'document',
-        hoofdObject: 'https://openzaak.example.com/zaken/api/v1/zaken/123',
+        resource: 'enkelvoudiginformatieobject',
+        hoofdObject: 'https://openzaak.example.com/documenten/api/v1/enkelvoudiginformatieobjecten/456',
         resourceUrl: 'https://openzaak.example.com/documenten/api/v1/enkelvoudiginformatieobjecten/456',
+        aanmaakdatum: '2024-01-01T10:00:00Z',
+        kenmerken: ['bronorganisatie' => '000000000'],
+    );
+
+    $batchingServiceSpy = Mockery::spy(BatchingService::class);
+
+    $job = new IngestNotification($openNotification);
+    $job->handle(app(ZgwReader::class), $batchingServiceSpy);
+
+    Http::assertNothingSent();
+    $batchingServiceSpy->shouldNotHaveReceived('getOrCreateBatch');
+
+    expect(Notification::count())->toBe(1);
+
+    $notification = Notification::first();
+    expect($notification->isIgnored())->toBeTrue()
+        ->and($notification->ignored_reason)->toBe(NotificationIgnoreReason::UnsupportedChannel)
+        ->and($notification->processed)->toBeFalse()
+        ->and($notification->batch_id)->toBeNull()
+        ->and($notification->zaak_identificatie)->toBeNull()
+        ->and($notification->notification)->toBe($openNotification->toArray());
+});
+
+test('it stores an unsupported action on the zaken kanaal as ignored without fetching the zaak', function (string $actie, string $resource) {
+    Http::fake();
+
+    $openNotification = new OpenNotification(
+        actie: $actie,
+        kanaal: 'zaken',
+        resource: $resource,
+        hoofdObject: 'https://openzaak.example.com/zaken/api/v1/zaken/123',
+        resourceUrl: 'https://openzaak.example.com/zaken/api/v1/'.$resource.'/456',
         aanmaakdatum: '2024-01-01T10:00:00Z',
     );
 
@@ -35,8 +68,17 @@ test('it skips processing when kanaal is not zaken', function () {
     Http::assertNothingSent();
     $batchingServiceSpy->shouldNotHaveReceived('getOrCreateBatch');
 
-    expect(Notification::count())->toBe(0);
-});
+    $notification = Notification::sole();
+    expect($notification->ignored_reason)->toBe(NotificationIgnoreReason::UnsupportedAction)
+        ->and($notification->processed)->toBeFalse()
+        ->and($notification->batch_id)->toBeNull();
+})->with([
+    'update:zaak' => ['update', 'zaak'],
+    'partial_update:zaak' => ['partial_update', 'zaak'],
+    'destroy:zaak' => ['destroy', 'zaak'],
+    'create:rol' => ['create', 'rol'],
+    'destroy:rol' => ['destroy', 'rol'],
+]);
 
 test('it processes when kanaal is zaken', function () {
     Log::spy();
@@ -103,7 +145,75 @@ test('it processes when kanaal is zaken', function () {
 
     $notification = Notification::first();
     expect($notification->zaak_identificatie)->toBe('ZAAK-2024-001')
-        ->and($notification->processed)->toBeFalse();
+        ->and($notification->processed)->toBeFalse()
+        ->and($notification->isIgnored())->toBeFalse();
+});
+
+test('it stores the kenmerken with the notification', function () {
+    Log::spy();
+
+    $kenmerken = [
+        'bronorganisatie' => '000000000',
+        'zaaktype' => 'https://openzaak.example.com/catalogi/api/v1/zaaktypen/123',
+    ];
+
+    $openNotification = new OpenNotification(
+        actie: 'create',
+        kanaal: 'zaken',
+        resource: 'zaak',
+        hoofdObject: 'https://openzaak.example.com/zaken/api/v1/zaken/123',
+        resourceUrl: 'https://openzaak.example.com/zaken/api/v1/zaken/123',
+        aanmaakdatum: '2024-01-01T10:00:00Z',
+        kenmerken: $kenmerken,
+    );
+
+    Http::fake([
+        $openNotification->hoofdObject => Http::response([
+            'uuid' => '550e8400-e29b-41d4-a716-446655440000',
+            'url' => 'https://openzaak.example.com/zaken/api/v1/zaken/123',
+            'identificatie' => 'ZAAK-2024-001',
+            'zaaktype' => 'https://openzaak.example.com/catalogi/api/v1/zaaktypen/123',
+            'omschrijving' => 'Test zaak',
+            'startdatum' => '2024-01-15',
+            'registratiedatum' => '2024-01-15T10:30:00Z',
+            'einddatum' => null,
+            'einddatumGepland' => null,
+            'uiterlijkeEinddatumAfdoening' => null,
+            'bronorganisatie' => null,
+            'zaakgeometrie' => null,
+        ]),
+    ]);
+
+    ZaaktypeMapping::factory()->active()->create([
+        'zaaktype_url' => 'https://openzaak.example.com/catalogi/api/v1/zaaktypen/123',
+    ]);
+
+    $job = new IngestNotification($openNotification);
+    $job->handle(app(ZgwReader::class), app(BatchingService::class));
+
+    $notification = Notification::sole();
+    expect($notification->notification['kenmerken'])->toBe($kenmerken)
+        ->and($notification->batch_id)->not->toBeNull();
+});
+
+test('a notification queued before kenmerken existed still converts to an array', function () {
+    // A serialized job without the kenmerken property, as queued by the previous version.
+    $serialized = serialize(new OpenNotification(
+        actie: 'create',
+        kanaal: 'documenten',
+        resource: 'enkelvoudiginformatieobject',
+        hoofdObject: 'https://openzaak.example.com/documenten/api/v1/enkelvoudiginformatieobjecten/456',
+        resourceUrl: 'https://openzaak.example.com/documenten/api/v1/enkelvoudiginformatieobjecten/456',
+        aanmaakdatum: '2024-01-01T10:00:00Z',
+    ));
+    $legacy = preg_replace('/s:9:"kenmerken";a:0:\{\}/', '', str_replace(':7:{', ':6:{', $serialized));
+
+    expect($legacy)->not->toContain('kenmerken');
+
+    $restored = unserialize($legacy);
+
+    expect($restored)->toBeInstanceOf(OpenNotification::class)
+        ->and($restored->toArray()['kenmerken'])->toBe([]);
 });
 
 test('it fails without a retry and sends no request when the hoofdObject is not on a configured ZGW host', function () {
