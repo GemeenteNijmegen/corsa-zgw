@@ -98,6 +98,19 @@ class NotificationFactory extends Factory
         ]);
     }
 
+    /**
+     * A notification whose job failed for good, with a made-up job id.
+     */
+    public function failed(): static
+    {
+        return $this->state([
+            'processed' => false,
+            'failed_at' => now(),
+            'failure' => 'ConnectionException: Connection timed out',
+            'failed_job_id' => fake()->uuid(),
+        ]);
+    }
+
     public function processed(): static
     {
         return $this->state([

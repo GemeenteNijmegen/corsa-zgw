@@ -10,6 +10,7 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 use Woweb\Zgw\Exceptions\DisallowedHostException;
 
 class HandleNotification implements ShouldQueue
@@ -97,11 +98,8 @@ class HandleNotification implements ShouldQueue
 
             $handler($corsaZaakdmsService);
 
-            // Mark notification as processed
-            $this->notification->update([
-                'processed' => true,
-                'processed_at' => now(),
-            ]);
+            // Mark notification as processed, which clears a failure of an earlier run
+            $this->notification->markProcessed();
 
             Log::info('Notification processed successfully', [
                 'notification_id' => $this->notification->id,
@@ -131,6 +129,15 @@ class HandleNotification implements ShouldQueue
 
             throw $e;
         }
+    }
+
+    /**
+     * Called once the job has failed for good. The jobs after it in the batch chain do not run,
+     * so their notifications stay unprocessed without a recorded failure.
+     */
+    public function failed(Throwable $e): void
+    {
+        $this->notification->markFailed($e, $this->job?->uuid());
     }
 
     /**

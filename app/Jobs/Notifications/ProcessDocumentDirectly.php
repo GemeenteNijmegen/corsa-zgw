@@ -136,16 +136,22 @@ class ProcessDocumentDirectly implements ShouldQueue
             return;
         }
 
-        $this->notification->update([
-            'processed' => true,
-            'processed_at' => now(),
-        ]);
+        $this->notification->markProcessed();
 
         Log::info('Direct notification processed', [
             'notification_id' => $this->notification->id,
             'zaak_identificatie' => $this->notification->zaak_identificatie,
             'outcome' => $outcome->name,
         ]);
+    }
+
+    /**
+     * Called once the job has failed for good: after a permanent error, after the last attempt
+     * of a temporary error, or when its time to retry has run out.
+     */
+    public function failed(Throwable $e): void
+    {
+        $this->notification->markFailed($e, $this->job?->uuid());
     }
 
     /**
@@ -160,9 +166,11 @@ class ProcessDocumentDirectly implements ShouldQueue
         $batch = DB::transaction(function () use ($batchingService): Batch {
             $batch = $batchingService->getOrCreateBatch($this->notification->zaak_identificatie);
 
+            // A failure of an earlier run no longer applies: the batch processes it now.
             $this->notification->update([
                 'route' => NotificationRoute::Batch,
                 'batch_id' => $batch->id,
+                ...Notification::clearedFailure(),
             ]);
 
             return $batch;
