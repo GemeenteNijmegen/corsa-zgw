@@ -232,7 +232,9 @@ class ProcessDocumentDirectly implements ShouldQueue
      * there.
      *
      * The route and the batch change together, so a failure halfway leaves the notification on the
-     * direct route and a retry moves it again. The batch timer starts after that change.
+     * direct route and a retry moves it again. The same transaction keeps the batch from being
+     * locked for processing between finding it and linking the notification (see
+     * BatchingService::getOrCreateBatch()). The batch timer starts after that change.
      */
     private function moveToBatch(BatchingService $batchingService): void
     {

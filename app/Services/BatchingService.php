@@ -17,6 +17,13 @@ class BatchingService
 
     /**
      * Get or create a batch for a notification
+     *
+     * Call this in a database transaction that also links the notification to the batch. The open
+     * batch is read with a row lock, so on PostgreSQL adding a notification and locking the batch
+     * for processing (Batch::lockForProcessing()) exclude each other: either the notification is
+     * linked before the batch is locked and the batch processes it, or the lock comes first and
+     * this does not return that batch anymore, so the notification goes to a new one. Without the
+     * transaction the row lock ends right after the read and that guarantee is gone.
      */
     public function getOrCreateBatch(string $zaakIdentificatie): Batch
     {
@@ -24,6 +31,7 @@ class BatchingService
         $batch = Batch::where('zaak_identificatie', $zaakIdentificatie)
             ->whereNull('locked_at')
             ->latest()
+            ->lockForUpdate()
             ->first();
 
         if (! $batch) {
@@ -86,18 +94,15 @@ class BatchingService
      */
     public function processBatch(Batch $batch): void
     {
-        // Prevent double processing
-        if ($batch->isLocked()) {
+        // Prevent double processing. Two jobs for the same batch can run at the same time, so the
+        // lock is one conditional update and only the job whose update changed the row goes on.
+        if (! $batch->lockForProcessing()) {
             Log::warning('Attempted to process already locked batch', [
                 'batch_id' => $batch->id,
             ]);
 
             return;
         }
-
-        // Lock the batch
-        $batch->lock();
-        $batch->update(['status' => 'processing']);
 
         Log::info('Processing batch', [
             'batch_id' => $batch->id,

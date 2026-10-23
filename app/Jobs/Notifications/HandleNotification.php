@@ -70,6 +70,21 @@ class HandleNotification implements ShouldQueue
      */
     public function handle(CorsaZaakdmsService $corsaZaakdmsService): void
     {
+        $this->notification->refresh();
+
+        // A second chain for the same batch, or a retry of a job that already succeeded, has
+        // nothing left to do. Returning normally lets the rest of the chain go on.
+        if ($this->notification->processed || $this->notification->ignored_at !== null) {
+            Log::info('Notification already handled, skipping', [
+                'notification_id' => $this->notification->id,
+                'batch_id' => $this->notification->batch_id,
+                'processed' => $this->notification->processed,
+                'ignored' => $this->notification->ignored_at !== null,
+            ]);
+
+            return;
+        }
+
         Log::info('Processing notification', [
             'notification_id' => $this->notification->id,
             'batch_id' => $this->notification->batch_id,

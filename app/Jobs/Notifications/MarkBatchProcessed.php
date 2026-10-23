@@ -5,6 +5,7 @@ namespace App\Jobs\Notifications;
 use App\Models\Batch;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Log;
 
 /**
  * The last job in the chain of a batch. A chain stops at a job that fails, and a job that is
@@ -24,6 +25,11 @@ class MarkBatchProcessed implements ShouldQueue
 
     public function handle(): void
     {
-        $this->batch->markProcessed();
+        // A second run (a duplicate chain or a retry) keeps the time the batch was first processed.
+        if (! $this->batch->markProcessedOnce()) {
+            Log::info('Batch already processed, skipping', [
+                'batch_id' => $this->batch->id,
+            ]);
+        }
     }
 }

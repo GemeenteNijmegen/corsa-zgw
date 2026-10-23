@@ -21,8 +21,9 @@ Vertegenwoordigt een batch notificaties voor een specifieke zaak.
 - `notifications()`: Alle notificaties in de batch
 
 **Voornaamste Methoden:**
-- `lock()`: Blokkeert de batch (zet locked_at timestamp)
+- `lockForProcessing()`: Blokkeert de batch en zet de status op processing, met één voorwaardelijke update (alleen als `locked_at` nog leeg is); geeft terug of deze aanroep de batch blokkeerde
 - `markProcessed()`: Markeert de batch als verwerkt (zet processed_at en status)
+- `markProcessedOnce()`: Idem, maar alleen als de batch nog niet verwerkt is; gebruikt door `MarkBatchProcessed`
 - `isLocked()`: Controleert of de batch geblokkeerd is
 - `isProcessed()`: Controleert of de batch verwerkt is
 - `hasZaakAangemaakt()`: Controleert of de batch een "zaak aangemaakt"-notificatie bevat
@@ -33,7 +34,7 @@ Vertegenwoordigt een batch notificaties voor een specifieke zaak.
 Beheert de centrale logica van het batchingsysteem.
 
 **Voornaamste Methoden:**
-- `getOrCreateBatch(string $zaakIdentificatie): Batch`: Haalt of maakt een batch voor een zaak
+- `getOrCreateBatch(string $zaakIdentificatie): Batch`: Haalt of maakt een batch voor een zaak. Leest de open batch met een rijvergrendeling, dus roep hem aan in een transactie die ook de notificatie koppelt (zie "Gelijktijdige verwerking" hieronder)
 - `addNotificationToBatch(Notification $notification, Batch $batch): void`: Voegt een notificatie aan de batch toe en reset de timer
 - `resetTimer(Batch $batch): void`: Stelt de timer voor een batch opnieuw in
 - `processBatch(Batch $batch): void`: Verwerkt een batch wanneer de timer afloopt
@@ -51,12 +52,12 @@ Beheert de centrale logica van het batchingsysteem.
 Verwerkt een batch wanneer de timer afloopt.
 
 **Logica:**
-1. Blokkeert de batch en zet status op 'processing'
+1. Blokkeert de batch en zet status op 'processing' (`lockForProcessing()`); was de batch al geblokkeerd, dan stopt de job zonder keten
 2. Haalt de gesorteerde notificaties op
 3. Bepaalt de verwerkingsstrategie:
    - **Met "zaak aangemaakt"**: Maakt een jobketen die de aanmaaknotificatie eerst verwerkt, gevolgd door de rest sequentieel
    - **Zonder "zaak aangemaakt"**: Maakt een jobketen die alle notificaties sequentieel verwerkt (met TODO: verificatie van zaakbestaan in Corsa als eerste stap)
-4. Markeert de batch als verwerkt
+4. Hangt `MarkBatchProcessed` als laatste job aan de keten: de batch blijft op 'processing' en gaat pas naar 'processed' als alle jobs in de keten gelukt zijn (een batch zonder notificaties staat meteen op 'processed')
 
 #### HandleNotification (`app/Jobs/Notifications/HandleNotification.php`)
 Verwerkt een individuele notificatie.
@@ -234,6 +235,16 @@ $notifications = $batch->notifications()->get();
 // Bekijk notificatietypen
 $types = $batch->getNotificationTypes();
 ```
+
+## Gelijktijdige verwerking
+
+Er kunnen twee jobs tegelijk voor dezelfde batch lopen, bijvoorbeeld als de queue vol staat en de scheduler de batch na een minuut opnieuw klaarzet. Daarom:
+
+- **Blokkeren is één voorwaardelijke update.** `lockForProcessing()` zet `locked_at` en `processing` alleen als `locked_at` nog leeg is. Alleen de job waarvan de update de rij raakte, bouwt de keten; de andere logt "Attempted to process already locked batch" en stopt.
+- **Toevoegen en blokkeren sluiten elkaar uit.** `IngestNotification` en de terugval van de directe route (`ProcessDocumentDirectly::moveToBatch()`) zoeken de open batch en koppelen de notificatie in één transactie. `getOrCreateBatch()` leest de batch daarin met `lockForUpdate()`. Op PostgreSQL wacht de voorwaardelijke update van `lockForProcessing()` op die rijvergrendeling. Is de notificatie eerst gekoppeld, dan leest `processBatch()` haar daarna mee. Is de batch eerst geblokkeerd, dan vindt `getOrCreateBatch()` hem na het wachten niet meer als open batch en komt de notificatie in een nieuwe batch.
+- **Dubbel uitvoeren is onschadelijk.** `HandleNotification` stopt meteen, met een logregel, als de notificatie al verwerkt of genegeerd is, en laat de rest van de keten doorgaan. `MarkBatchProcessed` houdt het tijdstip waarop de batch voor het eerst verwerkt werd.
+
+SQLite (de testsuite) kent geen rijvergrendeling; de tests tonen de logica, niet twee workers tegelijk.
 
 ## Toekomstige Verbeteringen
 
