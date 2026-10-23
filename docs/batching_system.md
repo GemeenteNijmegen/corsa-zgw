@@ -57,7 +57,7 @@ Verwerkt een batch wanneer de timer afloopt.
 3. Bepaalt de verwerkingsstrategie:
    - **Met "zaak aangemaakt"**: Maakt een jobketen die de aanmaaknotificatie eerst verwerkt, gevolgd door de rest sequentieel
    - **Zonder "zaak aangemaakt"**: Maakt een jobketen die alle notificaties sequentieel verwerkt (met TODO: verificatie van zaakbestaan in Corsa als eerste stap)
-4. Markeert de batch als verwerkt
+4. Hangt `MarkBatchProcessed` als laatste job aan de keten: de batch blijft op 'processing' en gaat pas naar 'processed' als alle jobs in de keten gelukt zijn (een batch zonder notificaties staat meteen op 'processed')
 
 #### HandleNotification (`app/Jobs/Notifications/HandleNotification.php`)
 Verwerkt een individuele notificatie.
