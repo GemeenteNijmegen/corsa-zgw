@@ -107,3 +107,47 @@ test('the direct job fails at the fourth temporary error in a row and records it
         ->and($notification->fresh()->failure)->toBe('ConnectionException: timed out')
         ->and($notification->fresh()->failed_job_id)->toBe($uuid);
 });
+
+// ─── Batch job ───────────────────────────────────────────────────────────────
+
+test('an error still fails the batch job after one attempt and records it', function () {
+    $notification = Notification::factory()->forZaak()->create(['zaak_identificatie' => 'ZAAK-0001']);
+    $this->mock(CorsaZaakdmsService::class)
+        ->shouldReceive('processZaakAangemaakt')
+        ->once()
+        ->andThrow(new RuntimeException('Fo02 refused'));
+
+    HandleNotification::dispatch($notification);
+    $uuid = json_decode((string) DB::table('jobs')->value('payload'), true)['uuid'];
+
+    workOneJob('default');
+
+    expect(DB::table('jobs')->count())->toBe(0)
+        ->and($notification->fresh()->failure)->toBe('RuntimeException: Fo02 refused')
+        ->and($notification->fresh()->failed_job_id)->toBe($uuid);
+});
+
+test('the batch job waits for the lock without failing, up to the duration of the lock', function () {
+    $notification = Notification::factory()->forZaak()->create(['zaak_identificatie' => 'ZAAK-0001']);
+    $this->mock(CorsaZaakdmsService::class)
+        ->shouldReceive('processZaakAangemaakt')
+        ->andThrow(new DocumentLockedException);
+
+    HandleNotification::dispatch($notification);
+
+    $job = new HandleNotification($notification);
+    for ($pickup = 1; $pickup <= $job->tries; $pickup++) {
+        workOneJob('default');
+
+        expect(DB::table('jobs')->value('attempts'))->toBe($pickup)
+            ->and($notification->fresh()->failed_at)->toBeNull();
+
+        $this->travel(HandleNotification::LOCK_RETRY_SECONDS + 1)->seconds();
+    }
+
+    // A lock that is still held after that is not released by its job any more; give up.
+    workOneJob('default');
+
+    expect(DB::table('jobs')->count())->toBe(0)
+        ->and($notification->fresh()->failure)->toContain('MaxAttemptsExceededException');
+});
