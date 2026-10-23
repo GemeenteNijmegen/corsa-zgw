@@ -9,6 +9,7 @@ use App\Models\Batch;
 use App\Models\Notification;
 use App\Services\BatchingService;
 use App\Services\CorsaZaakdmsService;
+use App\ValueObjects\OpenNotification;
 use DateTimeInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -16,15 +17,19 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 use Throwable;
 use Woweb\Zgw\Exceptions\ApiRequestException;
 
 /**
- * Add a newly linked document to its zaak right away, without waiting for the batch of the zaak.
+ * Send a document to the document management system right away, without waiting for the batch of
+ * the zaak.
  *
- * Used for a document that is still being edited, so it is in the document management system as
- * soon as possible. When the zaak is not there yet, the notification moves to the batch of the
- * zaak, which adds the zaak first.
+ * Used for a document that is linked to a zaak while it is still being edited, so it is in the
+ * document management system as soon as possible, and for every change to a document. When the
+ * zaak (for a new link) or the document (for a change) is not there yet, the notification moves to
+ * the batch of the zaak, which adds the zaak and its documents first. A change waits for the
+ * document a few times before it moves.
  */
 class ProcessDocumentDirectly implements ShouldQueue
 {
@@ -57,8 +62,22 @@ class ProcessDocumentDirectly implements ShouldQueue
      */
     public const RETRY_MINUTES = 20;
 
-    public function __construct(private readonly Notification $notification)
-    {
+    /**
+     * Seconds to wait before checking again whether a changed document is in the document
+     * management system, or whether its upload is complete. After the last wait a change moves to
+     * the batch of the zaak, or fails when the upload is still not complete.
+     *
+     * @var list<int>
+     */
+    public const DOCUMENT_WAIT_SECONDS = [30, 120, 300];
+
+    /**
+     * @param  int  $documentWaits  how many times this change already waited for the document
+     */
+    public function __construct(
+        private readonly Notification $notification,
+        public readonly int $documentWaits = 0,
+    ) {
         $this->onQueue(self::QUEUE);
     }
 
@@ -106,8 +125,15 @@ class ProcessDocumentDirectly implements ShouldQueue
             return;
         }
 
+        $isUpdate = OpenNotification::isDocumentUpdateAction(
+            $this->notification->notification['actie'] ?? null,
+            $this->notification->notification['resource'] ?? null,
+        );
+
         try {
-            $outcome = $corsaZaakdmsService->addDocumentToZaak($this->notification);
+            $outcome = $isUpdate
+                ? $corsaZaakdmsService->updateDocument($this->notification)
+                : $corsaZaakdmsService->addDocumentToZaak($this->notification);
         } catch (DocumentLockedException) {
             // Another job is sending the same document. Once it is done the register has it.
             $this->release(self::LOCK_RETRY_SECONDS);
@@ -143,6 +169,12 @@ class ProcessDocumentDirectly implements ShouldQueue
             return;
         }
 
+        if ($outcome === DocumentSyncOutcome::DocumentNotInCorsa || $outcome === DocumentSyncOutcome::UploadIncomplete) {
+            $this->waitForDocument($outcome, $batchingService);
+
+            return;
+        }
+
         $this->notification->markProcessed();
 
         Log::info('Direct notification processed', [
@@ -162,8 +194,42 @@ class ProcessDocumentDirectly implements ShouldQueue
     }
 
     /**
-     * The zaak is not in the document management system yet. The batch of the zaak adds the zaak
-     * before the document, so the notification is processed there.
+     * The changed document is not in the document management system yet (its link may still be in
+     * a batch), or its content is still being uploaded. Check again later in a new job that knows
+     * how often it waited. Waiting is not an error, so it does not use up the retries for errors.
+     * After the last wait a document that is still missing moves the change to the batch of the
+     * zaak, and an upload that is still not complete fails the job.
+     */
+    private function waitForDocument(DocumentSyncOutcome $outcome, BatchingService $batchingService): void
+    {
+        $delay = self::DOCUMENT_WAIT_SECONDS[$this->documentWaits] ?? null;
+
+        if ($delay !== null) {
+            Log::info('Document not ready for the change yet, checking again later', [
+                'notification_id' => $this->notification->id,
+                'outcome' => $outcome->name,
+                'wait' => $this->documentWaits + 1,
+                'delay_seconds' => $delay,
+            ]);
+
+            self::dispatch($this->notification, $this->documentWaits + 1)->delay($delay);
+
+            return;
+        }
+
+        if ($outcome === DocumentSyncOutcome::DocumentNotInCorsa) {
+            $this->moveToBatch($batchingService);
+
+            return;
+        }
+
+        $this->fail(new RuntimeException('Document upload is not complete'));
+    }
+
+    /**
+     * The zaak (or for a change, the document) is not in the document management system yet. The
+     * batch of the zaak adds the zaak and its documents first, so the notification is processed
+     * there.
      *
      * The route and the batch change together, so a failure halfway leaves the notification on the
      * direct route and a retry moves it again. The batch timer starts after that change.
@@ -186,7 +252,7 @@ class ProcessDocumentDirectly implements ShouldQueue
         // The notification is already linked, so this only starts the timer of the batch.
         $batchingService->addNotificationToBatch($this->notification, $batch);
 
-        Log::info('Zaak not in Corsa yet, direct notification moved to the batch of the zaak', [
+        Log::info('Zaak or document not in Corsa yet, direct notification moved to the batch of the zaak', [
             'notification_id' => $this->notification->id,
             'batch_id' => $batch->id,
             'zaak_identificatie' => $this->notification->zaak_identificatie,

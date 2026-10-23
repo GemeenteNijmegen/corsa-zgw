@@ -36,7 +36,8 @@ class IgnoredNotificationsTable
                     ->badge()
                     ->color(fn (NotificationIgnoreReason $state): string => match ($state) {
                         NotificationIgnoreReason::UnknownZaaktype,
-                        NotificationIgnoreReason::InactiveZaaktype => 'warning',
+                        NotificationIgnoreReason::InactiveZaaktype,
+                        NotificationIgnoreReason::DocumentInMultipleZaken => 'warning',
                         default => 'gray',
                     })
                     // The count counts the non-null values of its column, so it is placed on a

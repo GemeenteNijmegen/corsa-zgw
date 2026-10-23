@@ -21,12 +21,12 @@ test('it stores a notification on another kanaal as ignored without fetching any
 
     $openNotification = new OpenNotification(
         actie: 'create',
-        kanaal: 'documenten',
-        resource: 'enkelvoudiginformatieobject',
-        hoofdObject: 'https://openzaak.example.com/documenten/api/v1/enkelvoudiginformatieobjecten/456',
-        resourceUrl: 'https://openzaak.example.com/documenten/api/v1/enkelvoudiginformatieobjecten/456',
+        kanaal: 'besluiten',
+        resource: 'besluit',
+        hoofdObject: 'https://openzaak.example.com/besluiten/api/v1/besluiten/456',
+        resourceUrl: 'https://openzaak.example.com/besluiten/api/v1/besluiten/456',
         aanmaakdatum: '2024-01-01T10:00:00Z',
-        kenmerken: ['bronorganisatie' => '000000000'],
+        kenmerken: ['verantwoordelijkeOrganisatie' => '000000000'],
     );
 
     $batchingServiceSpy = Mockery::spy(BatchingService::class);

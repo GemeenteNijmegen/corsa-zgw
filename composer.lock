@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "d9dc860bdf9270489ec210b59f39ec7d",
+    "content-hash": "2da17fd582fc8d16ee0ab311a65dcff6",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -9025,19 +9025,22 @@
         },
         {
             "name": "woweb/laravel-zaakdms",
-            "version": "dev-main",
+            "version": "v1.0.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/WowebNL/laravel-zaakdms.git",
-                "reference": "647759f8243fb88eacb4a5f97a2df057dbef26f4"
+                "reference": "f3b0796cd7c7a8b4090107bb8f7c7d429b817c15"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/WowebNL/laravel-zaakdms/zipball/647759f8243fb88eacb4a5f97a2df057dbef26f4",
-                "reference": "647759f8243fb88eacb4a5f97a2df057dbef26f4",
+                "url": "https://api.github.com/repos/WowebNL/laravel-zaakdms/zipball/f3b0796cd7c7a8b4090107bb8f7c7d429b817c15",
+                "reference": "f3b0796cd7c7a8b4090107bb8f7c7d429b817c15",
                 "shasum": ""
             },
-            "default-branch": true,
+            "require-dev": {
+                "orchestra/testbench": "^10.0",
+                "phpunit/phpunit": "^11.0"
+            },
             "type": "library",
             "extra": {
                 "laravel": {
@@ -9051,6 +9054,16 @@
                     "Woweb\\Zaakdms\\": "src/"
                 }
             },
+            "autoload-dev": {
+                "psr-4": {
+                    "Woweb\\Zaakdms\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "phpunit"
+                ]
+            },
             "license": [
                 "MIT"
             ],
@@ -9062,10 +9075,10 @@
             ],
             "description": "A laravel wrapper for the Zaak- en Documentservices 1.1 (Soap)",
             "support": {
-                "source": "https://github.com/WowebNL/laravel-zaakdms/tree/main",
+                "source": "https://github.com/WowebNL/laravel-zaakdms/tree/v1.0.0",
                 "issues": "https://github.com/WowebNL/laravel-zaakdms/issues"
             },
-            "time": "2025-11-28T09:16:41+00:00"
+            "time": "2026-10-23T13:15:52+00:00"
         },
         {
             "name": "woweb/laravel-zgw-client",
@@ -13254,9 +13267,7 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {
-        "woweb/laravel-zaakdms": 20
-    },
+    "stability-flags": {},
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {

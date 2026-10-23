@@ -349,3 +349,36 @@ test('the batch page shows no link when its zaak has no ignored notifications', 
     Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])
         ->assertActionHidden('ignored_notifications');
 });
+
+test('it shows readable labels for ignored changes to documents', function () {
+    $notLinked = createIgnoredNotification(
+        NotificationIgnoreReason::DocumentNotLinked,
+        ['zaak_identificatie' => null],
+        ['kanaal' => 'documenten', 'actie' => 'update', 'resource' => 'enkelvoudiginformatieobject'],
+    );
+    $multiple = createIgnoredNotification(
+        NotificationIgnoreReason::DocumentInMultipleZaken,
+        ['zaak_identificatie' => null],
+        ['kanaal' => 'documenten', 'actie' => 'partial_update', 'resource' => 'enkelvoudiginformatieobject'],
+    );
+
+    Livewire::test(ListIgnoredNotifications::class)
+        ->assertCanSeeTableRecords([$notLinked, $multiple])
+        ->assertTableColumnStateSet('kanaal', 'documenten', $notLinked)
+        ->assertSee('Document niet aan een zaak gekoppeld')
+        ->assertSee('Document aan meerdere zaken gekoppeld')
+        ->filterTable('ignored_reason', NotificationIgnoreReason::DocumentInMultipleZaken->value)
+        ->assertCanSeeTableRecords([$multiple])
+        ->assertCanNotSeeTableRecords([$notLinked]);
+});
+
+test('a document linked to more than one zaak is shown as a warning and a document without a link is not', function () {
+    createIgnoredNotification(NotificationIgnoreReason::DocumentInMultipleZaken);
+    createIgnoredNotification(NotificationIgnoreReason::DocumentNotLinked);
+
+    $html = Livewire::test(ListIgnoredNotifications::class)->loadTable()->html();
+
+    expect($html)->toMatch('/class="[^"]*fi-badge[^"]*fi-color-warning[^"]*"[^>]*>\s*(?:<[^>]+>\s*)*Document aan meerdere zaken gekoppeld/s')
+        ->and($html)->not->toMatch('/class="[^"]*fi-badge[^"]*fi-color-warning[^"]*"[^>]*>\s*(?:<[^>]+>\s*)*Document niet aan een zaak gekoppeld/s')
+        ->and($html)->toContain('Document niet aan een zaak gekoppeld</span>');
+});

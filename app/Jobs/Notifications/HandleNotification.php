@@ -2,14 +2,17 @@
 
 namespace App\Jobs\Notifications;
 
+use App\Enums\DocumentSyncOutcome;
 use App\Enums\NotificationIgnoreReason;
 use App\Exceptions\DocumentLockedException;
+use App\Exceptions\DocumentUploadIncompleteException;
 use App\Models\Notification;
 use App\Services\CorsaZaakdmsService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 use Throwable;
 use Woweb\Zgw\Exceptions\DisallowedHostException;
 
@@ -87,6 +90,8 @@ class HandleNotification implements ShouldQueue
                 'create:status' => $this->handleZaakPartialUpdate(...),
                 'create:zaakinformatieobject' => $this->handleDocumentAangemaakt(...),
                 'create:resultaat' => $this->handleResultaatAangemaakt(...),
+                'update:enkelvoudiginformatieobject',
+                'partial_update:enkelvoudiginformatieobject' => $this->handleDocumentGewijzigd(...),
                 default => null,
             };
 
@@ -108,6 +113,14 @@ class HandleNotification implements ShouldQueue
             // Another job is sending the same document. Once it is done the register has it, and
             // the rest of the chain waits for this job.
             Log::info('Document is being sent by another job, releasing the notification', [
+                'notification_id' => $this->notification->id,
+            ]);
+
+            $this->release(self::LOCK_RETRY_SECONDS);
+        } catch (DocumentUploadIncompleteException) {
+            // The content of the changed document is still being uploaded in parts. Wait the same
+            // way as for the lock; the tries above bound how long the chain waits.
+            Log::info('Document upload is not complete, releasing the notification', [
                 'notification_id' => $this->notification->id,
             ]);
 
@@ -177,6 +190,29 @@ class HandleNotification implements ShouldQueue
         ]);
 
         $corsaZaakdmsService->processDocumentAangemaakt($this->notification);
+    }
+
+    /**
+     * Handle a change to a document that ended up in the batch of its zaak, with the same checks as
+     * the direct route. The link comes earlier in the batch, so the document should be in the
+     * document management system by now; when it is not, the job fails visibly.
+     */
+    private function handleDocumentGewijzigd(CorsaZaakdmsService $corsaZaakdmsService): void
+    {
+        Log::debug('Handling document gewijzigd', [
+            'notification_id' => $this->notification->id,
+            'zaak_identificatie' => $this->notification->zaak_identificatie,
+        ]);
+
+        $outcome = $corsaZaakdmsService->updateDocument($this->notification);
+
+        if ($outcome === DocumentSyncOutcome::UploadIncomplete) {
+            throw new DocumentUploadIncompleteException;
+        }
+
+        if ($outcome === DocumentSyncOutcome::DocumentNotInCorsa) {
+            throw new RuntimeException('Missing document in Corsa for document update');
+        }
     }
 
     /**

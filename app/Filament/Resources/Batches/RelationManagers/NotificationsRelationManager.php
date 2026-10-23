@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Batches\RelationManagers;
 
 use App\Filament\Resources\Notifications\Schemas\NotificationPayloadSchema;
 use App\Filament\Resources\Notifications\Tables\NotificationsTable;
+use App\Models\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -18,35 +19,14 @@ class NotificationsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(function (Builder $query): Builder {
-                // Let the query grammar write the JSON paths, so the order also holds on PostgreSQL,
-                // where the MySQL style path '$.actie' does not match.
-                $grammar = $query->getQuery()->getGrammar();
-                $actie = $grammar->wrap('notification->actie');
-                $resource = $grammar->wrap('notification->resource');
-
-                return $query->orderByRaw(
-                    "CASE
-                        WHEN {$actie} = 'create' AND {$resource} = 'zaak' THEN 0
-                        WHEN {$actie} = 'create' AND {$resource} = 'resultaat' THEN 2
-                        ELSE 1
-                    END ASC"
-                );
-            })
+            ->modifyQueryUsing(self::inProcessingOrder(...))
             ->columns([
                 TextColumn::make('sort_order')
                     ->label('Volgorde')
-                    ->state(function ($record): string {
-                        $actie = $record->notification['actie'] ?? '';
-                        $resource = $record->notification['resource'] ?? '';
-                        $key = "{$actie}:{$resource}";
-
-                        return match ($key) {
-                            'create:zaak' => '0',
-                            'create:resultaat' => '2',
-                            default => '1',
-                        };
-                    }),
+                    ->state(fn ($record): string => (string) Notification::processingGroup(
+                        $record->notification['actie'] ?? null,
+                        $record->notification['resource'] ?? null,
+                    )),
                 TextColumn::make('actie_resource')
                     ->label('Type')
                     ->state(fn ($record): string => sprintf(
@@ -70,5 +50,16 @@ class NotificationsRelationManager extends RelationManager
                 NotificationPayloadSchema::failedJobAction(),
             ])
             ->poll('10s');
+    }
+
+    /**
+     * The order in which the batch processes its notifications.
+     *
+     * @param  Builder<Notification>  $query
+     * @return Builder<Notification>
+     */
+    private static function inProcessingOrder(Builder $query): Builder
+    {
+        return $query->inProcessingOrder();
     }
 }

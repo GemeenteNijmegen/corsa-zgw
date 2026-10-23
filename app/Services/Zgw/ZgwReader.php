@@ -48,6 +48,21 @@ class ZgwReader
     }
 
     /**
+     * The links between zaken and the given document. The Zaken API returns this list without
+     * pagination.
+     *
+     * @return Collection<int, array<string, mixed>>
+     *
+     * @throws ApiRequestException
+     */
+    public function zaakinformatieobjecten(string $informatieobjectUrl): Collection
+    {
+        return $this->connection()->zaken()->zaakinformatieobjecten()
+            ->index(['informatieobject' => $informatieobjectUrl])
+            ->collect();
+    }
+
+    /**
      * All catalogussen, across every page.
      *
      * @return Collection<int, array<string, mixed>>

@@ -26,7 +26,7 @@ Vertegenwoordigt een batch notificaties voor een specifieke zaak.
 - `isLocked()`: Controleert of de batch geblokkeerd is
 - `isProcessed()`: Controleert of de batch verwerkt is
 - `hasZaakAangemaakt()`: Controleert of de batch een "zaak aangemaakt"-notificatie bevat
-- `getNotificationsSorted()`: Retourneert notificaties gesorteerd (zaak:create eerst)
+- `getNotificationsSorted()`: Retourneert de notificaties in verwerkingsvolgorde (zie "Volgorde binnen een batch" hieronder)
 - `getNotificationTypes()`: Retourneert array van unieke actietypen in de batch
 
 ### 2. **Batchingservice** (`app/Services/BatchingService.php`)
@@ -66,6 +66,7 @@ Verwerkt een individuele notificatie.
 - `create:status`: Status aangemaakt → `handleZaakPartialUpdate()`
 - `create:zaakinformatieobject`: Document aangemaakt → `handleDocumentAangemaakt()`
 - `create:resultaat`: Resultaat aangemaakt → `handleResultaatAangemaakt()`
+- `update:enkelvoudiginformatieobject` en `partial_update:enkelvoudiginformatieobject`: Document gewijzigd → `handleDocumentGewijzigd()`, met dezelfde servicemethode en controles als de directe route (`CorsaZaakdmsService::updateDocument()`). Staat het document nog niet in Corsa, dan mislukt de job zichtbaar; is de upload nog niet compleet (`bestandsdelen`), dan wacht de job zoals bij de lock van een document
 - Overige: niet ondersteund → `ignoreUnsupportedAction()`
 
 **Stroom:**
@@ -87,6 +88,19 @@ php artisan notifications:flush-expired-batches
 ```
 
 Wordt automatisch elke minuut via de scheduler in `routes/console.php` uitgevoerd.
+
+## Volgorde binnen een batch
+
+De volgorde staat op één plek, `Notification::processingGroup()` en de scope `inProcessingOrder()`, en geldt zowel voor de jobketen (`getNotificationsSorted()`) als voor de notificatielijst op de batchpagina:
+
+| Groep | Notificaties |
+|---|---|
+| 0 | `create:zaak` |
+| 1 | alle overige, zoals `create:status` en `create:zaakinformatieobject` |
+| 2 | wijzigingen van een document (`update` en `partial_update` op `enkelvoudiginformatieobject`) |
+| 3 | `create:resultaat` |
+
+Binnen een groep is de volgorde expliciet die van ontvangst (`created_at`, daarna `id` bij gelijke tijd); voorheen was dat de volgorde die de database teruggaf. Een documentwijziging staat zo na de koppeling die het document toevoegt en vóór het resultaat, waarna de zaak in Corsa afgesloten kan zijn. De sortering loopt in de query, met JSON-paden die de query grammar per database schrijft, zodat ze ook op PostgreSQL klopt.
 
 ## Verwerkingsstroom
 

@@ -6,19 +6,32 @@ use Illuminate\Contracts\Support\Arrayable;
 
 final readonly class OpenNotification implements Arrayable
 {
-    /** The kanaal this application processes. */
-    public const SUPPORTED_KANAAL = 'zaken';
+    /**
+     * Per kanaal this application processes, the actie:resource combinations it processes there.
+     *
+     * @var array<string, list<string>>
+     */
+    public const SUPPORTED_ACTIONS = [
+        'zaken' => [
+            'create:zaak',
+            'create:status',
+            'create:zaakinformatieobject',
+            'create:resultaat',
+        ],
+        self::DOCUMENTEN_KANAAL => self::DOCUMENT_UPDATE_ACTIONS,
+    ];
+
+    /** The kanaal of changes to documents. */
+    public const DOCUMENTEN_KANAAL = 'documenten';
 
     /**
-     * The actie:resource combinations on the supported kanaal that this application processes.
+     * The changes to a document (PUT and PATCH) that are sent to the document management system.
      *
      * @var list<string>
      */
-    public const SUPPORTED_ACTIONS = [
-        'create:zaak',
-        'create:status',
-        'create:zaakinformatieobject',
-        'create:resultaat',
+    public const DOCUMENT_UPDATE_ACTIONS = [
+        'update:enkelvoudiginformatieobject',
+        'partial_update:enkelvoudiginformatieobject',
     ];
 
     /** @var array<string, string|null> */
@@ -41,12 +54,26 @@ final readonly class OpenNotification implements Arrayable
 
     public function isSupportedKanaal(): bool
     {
-        return $this->kanaal === self::SUPPORTED_KANAAL;
+        return array_key_exists($this->kanaal, self::SUPPORTED_ACTIONS);
+    }
+
+    /**
+     * A change to a document. Its hoofdObject is the document, not a zaak.
+     */
+    public function isDocumentUpdate(): bool
+    {
+        return $this->kanaal === self::DOCUMENTEN_KANAAL
+            && self::isDocumentUpdateAction($this->actie, $this->resource);
+    }
+
+    public static function isDocumentUpdateAction(?string $actie, ?string $resource): bool
+    {
+        return in_array("{$actie}:{$resource}", self::DOCUMENT_UPDATE_ACTIONS, true);
     }
 
     public function isSupportedAction(): bool
     {
-        return in_array("{$this->actie}:{$this->resource}", self::SUPPORTED_ACTIONS, true);
+        return in_array("{$this->actie}:{$this->resource}", self::SUPPORTED_ACTIONS[$this->kanaal] ?? [], true);
     }
 
     public function toArray(): array

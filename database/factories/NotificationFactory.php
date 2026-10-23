@@ -99,6 +99,28 @@ class NotificationFactory extends Factory
     }
 
     /**
+     * A change to a document on the direct route. Its hoofdObject is the document itself.
+     */
+    public function documentUpdate(string $actie = 'update'): static
+    {
+        $documentUrl = 'https://openzaak.example.com/documenten/api/v1/enkelvoudiginformatieobjecten/'.fake()->uuid();
+
+        return $this->state([
+            'batch_id' => null,
+            'route' => NotificationRoute::Direct,
+            'notification' => [
+                'actie' => $actie,
+                'kanaal' => 'documenten',
+                'resource' => 'enkelvoudiginformatieobject',
+                'hoofdObject' => $documentUrl,
+                'resourceUrl' => $documentUrl,
+                'aanmaakdatum' => now()->toIso8601String(),
+                'kenmerken' => [],
+            ],
+        ]);
+    }
+
+    /**
      * A notification whose job failed for good, with a made-up job id.
      */
     public function failed(): static

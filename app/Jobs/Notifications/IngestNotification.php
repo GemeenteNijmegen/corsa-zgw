@@ -54,6 +54,13 @@ class IngestNotification implements ShouldQueue
             return;
         }
 
+        if ($this->opennotification->isDocumentUpdate()) {
+            // The hoofdObject of a change to a document is the document itself, not a zaak.
+            $this->ingestDocumentUpdate($zgw);
+
+            return;
+        }
+
         // get the zaak from the hoofdobject URL
         try {
             $zaak = new Zaak(...$zgw->get($this->opennotification->hoofdObject));
@@ -117,6 +124,91 @@ class IngestNotification implements ShouldQueue
             'batch_id' => $batch->id,
             'zaak_identificatie' => $zaak->identificatie,
         ]);
+    }
+
+    /**
+     * A change to a document goes to the document management system directly, for the one zaak
+     * the document is linked to. Only zaken with an active mapping count. A document without a
+     * link is ignored, because the link sends the newest version once it is made. A document
+     * linked to more than one such zaak is ignored as well, because it is not known what the
+     * document management system does with one document in two zaken.
+     */
+    private function ingestDocumentUpdate(ZgwReader $zgw): void
+    {
+        $documentUrl = $this->opennotification->hoofdObject;
+
+        try {
+            /** @var array<string, Zaak> $zaken keyed on the URL of the zaak */
+            $zaken = [];
+
+            foreach ($zgw->zaakinformatieobjecten($documentUrl) as $link) {
+                $zaakUrl = $link['zaak'] ?? null;
+
+                if (is_string($zaakUrl) && $zaakUrl !== '' && ! isset($zaken[$zaakUrl])) {
+                    $zaken[$zaakUrl] = new Zaak(...$zgw->get($zaakUrl));
+                }
+            }
+        } catch (DisallowedHostException $e) {
+            // A URL outside the configured ZGW hosts will never succeed, so fail without a retry.
+            Log::warning('Notification refers to a host that is not a configured ZGW host', [
+                'actie' => $this->opennotification->actie,
+                'resource' => $this->opennotification->resource,
+                'reason' => $e->getMessage(),
+            ]);
+
+            $this->fail($e);
+
+            return;
+        }
+
+        if ($zaken === []) {
+            $this->storeIgnored(NotificationIgnoreReason::DocumentNotLinked);
+
+            return;
+        }
+
+        $mappings = ZaaktypeMapping::whereIn('zaaktype_url', array_map(fn (Zaak $zaak) => $zaak->zaaktype, $zaken))
+            ->get()
+            ->keyBy('zaaktype_url');
+
+        $active = array_values(array_filter(
+            $zaken,
+            fn (Zaak $zaak): bool => (bool) $mappings->get($zaak->zaaktype)?->is_active,
+        ));
+
+        if (count($active) > 1) {
+            Log::warning('Document is linked to more than one zaak with an active mapping, ignoring the change', [
+                'zaak_identificaties' => array_map(fn (Zaak $zaak) => $zaak->identificatie, $active),
+                'actie' => $this->opennotification->actie,
+            ]);
+
+            $this->storeIgnored(NotificationIgnoreReason::DocumentInMultipleZaken);
+
+            return;
+        }
+
+        if ($active === []) {
+            $single = count($zaken) === 1 ? reset($zaken) : null;
+
+            Log::warning('Zaaktype not active or unknown, ignoring notification', [
+                'zaak_identificaties' => array_map(fn (Zaak $zaak) => $zaak->identificatie, array_values($zaken)),
+                'actie' => $this->opennotification->actie,
+            ]);
+
+            $this->storeIgnored(
+                $mappings->isNotEmpty() ? NotificationIgnoreReason::InactiveZaaktype : NotificationIgnoreReason::UnknownZaaktype,
+                $single?->identificatie,
+            );
+
+            return;
+        }
+
+        Log::info('Received notification', [
+            'zaak_identificatie' => $active[0]->identificatie,
+            'actie' => $this->opennotification->actie,
+        ]);
+
+        $this->storeDirect($active[0]->identificatie);
     }
 
     /**
