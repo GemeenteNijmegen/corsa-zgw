@@ -119,6 +119,8 @@ The admin panel shows each notification as processed, failed or not processed ye
 
 A batch stays `processing` while its chain runs. The last job of the chain marks it as `processed`, so that only happens once every job before it has finished. In a batch chain the jobs after a failed job do not run, the last one included: the batch stays `processing`, the failed notification shows as failed, and the notifications after it stay "not processed yet".
 
+Two jobs for the same batch can run at the same time, for example when the queue is busy and the scheduler dispatches the batch again. The batch is locked with one conditional update (`locked_at` still empty), and only the job whose update changed the row builds the chain. Finding the open batch and linking a notification to it happen in one database transaction that reads the batch with a row lock, so on PostgreSQL a notification is either linked before the batch is locked and processed with it, or goes to a new batch. A batch job for a notification that is already processed or ignored does nothing, and the last job of a chain keeps the time the batch was first processed.
+
 ## Technical Stack
 
 - **Framework**: Laravel 12.x

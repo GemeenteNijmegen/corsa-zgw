@@ -107,7 +107,7 @@ Use a dataset for field-level rules.
 - `isLocked()` returns false when `locked_at` is null
 - `isLocked()` returns true when `locked_at` is set
 - `isProcessed()` returns false / true based on `processed_at`
-- `lock()` sets `locked_at` to now
+- `lockForProcessing()` sets `locked_at` and `status = processing` only when the batch is not locked yet
 - `markProcessed()` sets `processed_at` and `status = processed`
 - `hasZaakAangemaakt()` returns true when a `create:zaak` notification is present
 - `hasZaakAangemaakt()` returns false when no `create:zaak` notification is present
