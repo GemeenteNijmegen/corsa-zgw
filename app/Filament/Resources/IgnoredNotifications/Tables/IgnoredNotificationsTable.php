@@ -4,7 +4,6 @@ namespace App\Filament\Resources\IgnoredNotifications\Tables;
 
 use App\Enums\NotificationIgnoreReason;
 use App\Models\Notification;
-use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Infolists\Components\KeyValueEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -21,18 +20,12 @@ class IgnoredNotificationsTable
     {
         return $table
             ->columns([
-                TextColumn::make('created_at')
-                    ->label('Ontvangen')
-                    ->dateTime()
-                    ->sortable(),
+                // A notification is ignored when it is received, so the time it was received is
+                // only shown in "Bekijk payload", and only when it differs.
                 TextColumn::make('ignored_at')
                     ->label('Genegeerd op')
                     ->dateTime()
-                    ->sortable()
-                    // The count is placed on a column that is never null, because it counts the
-                    // non-null values of its column. On the zaak column the group without a zaak
-                    // would count 0.
-                    ->summarize(Count::make()->label('Aantal')),
+                    ->sortable(),
                 TextColumn::make('zaak_identificatie')
                     ->label('Zaak')
                     ->searchable()
@@ -45,7 +38,12 @@ class IgnoredNotificationsTable
                         NotificationIgnoreReason::UnknownZaaktype,
                         NotificationIgnoreReason::InactiveZaaktype => 'warning',
                         default => 'gray',
-                    }),
+                    })
+                    // The count counts the non-null values of its column, so it is placed on a
+                    // column that is always filled for an ignored notification. On the zaak column
+                    // the group without a zaak would count 0, and on the first column the summary
+                    // is not rendered.
+                    ->summarize(Count::make()->label('Aantal')),
                 TextColumn::make('kanaal')
                     ->label('Kanaal')
                     ->state(fn (Notification $record): ?string => $record->notification['kanaal'] ?? null)
@@ -123,19 +121,20 @@ class IgnoredNotificationsTable
                                     ->columnSpanFull(),
                                 TextEntry::make('aanmaakdatum')
                                     ->label('Aangemaakt')
-                                    ->state(function (Notification $record): ?string {
-                                        $aanmaakdatum = $record->notification['aanmaakdatum'] ?? null;
-
-                                        if ($aanmaakdatum === null) {
-                                            return null;
-                                        }
-
-                                        return Carbon::parse($aanmaakdatum)->format('d-m-Y H:i:s');
-                                    })
+                                    ->state(fn (Notification $record): ?string => $record->notification['aanmaakdatum'] ?? null)
+                                    ->dateTime()
                                     ->placeholder('—'),
                                 TextEntry::make('ignored_at')
                                     ->label('Genegeerd op')
                                     ->dateTime(),
+                                TextEntry::make('created_at')
+                                    ->label('Ontvangen')
+                                    ->dateTime()
+                                    // Only notifications that were in a batch before they were ignored
+                                    // differ; the margin covers a second boundary between the two writes.
+                                    ->visible(fn (Notification $record): bool => $record->created_at !== null
+                                        && $record->ignored_at !== null
+                                        && abs($record->created_at->diffInSeconds($record->ignored_at)) > 1),
                                 KeyValueEntry::make('kenmerken')
                                     ->label('Kenmerken')
                                     ->keyLabel('Kenmerk')
@@ -150,7 +149,7 @@ class IgnoredNotificationsTable
                                     ->label('JSON payload')
                                     ->state(fn (Notification $record): string => json_encode(
                                         $record->notification,
-                                        JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE
+                                        JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
                                     ))
                                     ->fontFamily('mono')
                                     ->columnSpanFull(),

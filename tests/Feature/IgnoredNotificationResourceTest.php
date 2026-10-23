@@ -65,6 +65,7 @@ test('it renders the ignored notifications page in the panel', function () {
         ->get(IgnoredNotificationResource::getUrl('index'))
         ->assertSuccessful()
         ->assertSeeText('Genegeerde notificaties')
+        ->assertDontSeeText('Genegeerde Notificaties')
         ->assertSeeText('ZAAK-0001')
         ->assertSeeText('Zaaktype zonder mapping');
 });
@@ -101,6 +102,13 @@ test('it shows the newest ignored notification first', function () {
 
     Livewire::test(ListIgnoredNotifications::class)
         ->assertCanSeeTableRecords([$newest, $middle, $older], inOrder: true);
+});
+
+test('it shows one date column, so the view action stays in view', function () {
+    $component = Livewire::test(ListIgnoredNotifications::class);
+
+    expect(array_keys($component->instance()->getTable()->getColumns()))
+        ->toBe(['ignored_at', 'zaak_identificatie', 'ignored_reason', 'kanaal', 'actie', 'resource']);
 });
 
 test('it shows the zaak, a readable reason, the kanaal, the actie and the resource', function () {
@@ -243,8 +251,49 @@ test('the view action shows the stored payload including the kenmerken', functio
         ->assertMountedActionModalSee('bronorganisatie')
         ->assertMountedActionModalSee('https://openzaak.example.com/catalogi/api/v1/zaaktypen/0b6a8f4e-0000-4000-8000-000000000099')
         ->assertMountedActionModalSee('https://openzaak.example.com/zaken/api/v1/zaken/0b6a8f4e-0000-4000-8000-000000000001')
-        ->assertMountedActionModalSee('02-01-2026 10:00:00')
         ->assertMountedActionModalSee('Zaaktype zonder mapping');
+});
+
+test('the view action shows the json payload without escaped slashes', function () {
+    $notification = createIgnoredNotification(NotificationIgnoreReason::UnknownZaaktype, ['zaak_identificatie' => 'ZAAK-0001']);
+
+    Livewire::test(ListIgnoredNotifications::class)
+        ->mountAction(TestAction::make('view_payload')->table($notification))
+        ->assertMountedActionModalSee('"hoofdObject": "https://openzaak.example.com/zaken/api/v1/zaken/0b6a8f4e-0000-4000-8000-000000000001"')
+        ->assertMountedActionModalDontSee('https:\\/\\/', false);
+});
+
+test('the view action shows the aanmaakdatum in the same format as the other dates', function () {
+    $notification = createIgnoredNotification(
+        NotificationIgnoreReason::UnknownZaaktype,
+        ['zaak_identificatie' => 'ZAAK-0001', 'ignored_at' => '2026-01-03 09:30:00'],
+    );
+
+    Livewire::test(ListIgnoredNotifications::class)
+        ->mountAction(TestAction::make('view_payload')->table($notification))
+        ->assertMountedActionModalSee('2, 2026 10:00:00')
+        ->assertMountedActionModalSee('3, 2026 09:30:00')
+        ->assertMountedActionModalDontSee('02-01-2026');
+});
+
+test('the view action shows when a notification was received only when that differs from when it was ignored', function () {
+    $ignoredOnArrival = createIgnoredNotification(
+        NotificationIgnoreReason::UnknownZaaktype,
+        ['created_at' => '2026-01-03 09:30:00', 'ignored_at' => '2026-01-03 09:30:01'],
+    );
+    $ignoredLater = createIgnoredNotification(
+        NotificationIgnoreReason::UnsupportedAction,
+        ['created_at' => '2026-01-03 08:00:00', 'ignored_at' => '2026-01-03 09:30:00'],
+    );
+
+    Livewire::test(ListIgnoredNotifications::class)
+        ->mountAction(TestAction::make('view_payload')->table($ignoredOnArrival))
+        ->assertMountedActionModalDontSee('Ontvangen');
+
+    Livewire::test(ListIgnoredNotifications::class)
+        ->mountAction(TestAction::make('view_payload')->table($ignoredLater))
+        ->assertMountedActionModalSee('Ontvangen')
+        ->assertMountedActionModalSee('3, 2026 08:00:00');
 });
 
 test('the view action handles a notification stored without kenmerken', function () {

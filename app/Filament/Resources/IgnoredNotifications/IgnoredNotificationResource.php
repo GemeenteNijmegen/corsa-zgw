@@ -30,6 +30,9 @@ class IgnoredNotificationResource extends Resource
 
     protected static ?string $pluralModelLabel = 'genegeerde notificaties';
 
+    // Same capitalisation as the navigation label, instead of Filament's title case.
+    protected static ?string $breadcrumb = 'Genegeerde notificaties';
+
     /**
      * @return Builder<Notification>
      */
