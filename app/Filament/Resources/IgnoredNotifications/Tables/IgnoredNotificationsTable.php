@@ -90,7 +90,7 @@ class IgnoredNotificationsTable
                     ->icon('heroicon-o-eye')
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Sluiten')
-                    ->infolist([
+                    ->schema([
                         Section::make('Notificatie')
                             ->columns(2)
                             ->schema([
