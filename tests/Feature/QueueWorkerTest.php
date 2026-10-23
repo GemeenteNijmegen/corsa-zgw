@@ -209,7 +209,7 @@ test('a batch is marked as processed only after the last job of its chain, also 
         ->and(DB::table('jobs')->count())->toBe(0);
 });
 
-test('a batch whose chain stops at a failed job stays processing, with the failure as its signal', function () {
+test('a batch whose chain stops at a failed job is marked as failed', function () {
     [$batch, $zaak, $status] = batchWithZaakAndStatus();
     $service = $this->mock(CorsaZaakdmsService::class);
     $service->shouldReceive('processZaakAangemaakt')->once()->andThrow(new RuntimeException('Fo02 refused'));
@@ -221,9 +221,115 @@ test('a batch whose chain stops at a failed job stays processing, with the failu
 
     $fresh = $batch->fresh();
     expect(DB::table('jobs')->count())->toBe(0)
-        ->and($fresh->status)->toBe('processing')
+        ->and($fresh->status)->toBe('failed')
         ->and($fresh->processed_at)->toBeNull()
         ->and($fresh->failedNotificationsCount())->toBe(1)
         ->and($fresh->isIncomplete())->toBeFalse()
+        ->and($fresh->isStuck())->toBeFalse()
         ->and($status->fresh()->status())->toBe(App\Enums\NotificationStatus::Pending);
+});
+
+test('a batch without a new zaak whose chain stops at a failed job is marked as failed as well', function () {
+    $batch = Batch::factory()->pending()->create(['zaak_identificatie' => 'ZAAK-0001']);
+    Notification::factory()->create([
+        'batch_id' => $batch->id,
+        'zaak_identificatie' => 'ZAAK-0001',
+        'notification' => ['actie' => 'create', 'kanaal' => 'zaken', 'resource' => 'status'],
+    ]);
+    $this->mock(CorsaZaakdmsService::class)
+        ->shouldReceive('processZaakPartialUpdate')->once()->andThrow(new RuntimeException('Fo02 refused'));
+
+    app(BatchingService::class)->processBatch($batch);
+
+    workOneJob('default');
+
+    expect($batch->fresh()->status)->toBe('failed')
+        ->and(DB::table('jobs')->count())->toBe(0);
+});
+
+test('a failed batch is marked as processed when its failed job succeeds on a retry and the rest of the chain runs', function () {
+    Schema::create('failed_jobs', function (Blueprint $table) {
+        $table->id();
+        $table->string('uuid')->unique();
+        $table->text('connection');
+        $table->text('queue');
+        $table->longText('payload');
+        $table->longText('exception');
+        $table->timestamp('failed_at')->useCurrent();
+    });
+    config(['queue.failed.driver' => 'database-uuids', 'queue.failed.database' => config('database.default')]);
+
+    [$batch, $zaak, $status] = batchWithZaakAndStatus();
+    $calls = 0;
+    $service = $this->mock(CorsaZaakdmsService::class);
+    $service->shouldReceive('processZaakAangemaakt')
+        ->twice()
+        ->andReturnUsing(function () use (&$calls) {
+            if (++$calls === 1) {
+                throw new RuntimeException('Fo02 refused');
+            }
+        });
+    $service->shouldReceive('processZaakPartialUpdate')->once();
+
+    app(BatchingService::class)->processBatch($batch);
+
+    workOneJob('default');
+    expect($batch->fresh()->status)->toBe('failed')
+        ->and(DB::table('jobs')->count())->toBe(0)
+        ->and(DB::table('failed_jobs')->count())->toBe(1);
+
+    // Retry the failed job by hand, as from the dashboard of the queue. The retry pushes the
+    // stored payload again, with the rest of the chain and its catch callback.
+    test()->artisan('queue:retry', ['id' => ['all']])->run();
+    expect(DB::table('jobs')->count())->toBe(1);
+
+    workOneJob('default');
+    expect($zaak->fresh()->processed)->toBeTrue()
+        ->and($zaak->fresh()->failed_at)->toBeNull()
+        ->and($batch->fresh()->status)->toBe('failed');
+
+    workOneJob('default');
+    expect($status->fresh()->processed)->toBeTrue()
+        ->and(DB::table('jobs')->value('payload'))->toContain('MarkBatchProcessed');
+
+    workOneJob('default');
+    $fresh = $batch->fresh();
+    expect($fresh->status)->toBe('processed')
+        ->and($fresh->processed_at)->not->toBeNull()
+        ->and($fresh->failedNotificationsCount())->toBe(0)
+        ->and(DB::table('jobs')->count())->toBe(0);
+});
+
+test('a failed job does not mark a batch as failed that another chain has processed already', function () {
+    [$batch] = batchWithZaakAndStatus();
+    $this->mock(CorsaZaakdmsService::class)
+        ->shouldReceive('processZaakAangemaakt')->once()->andThrow(new RuntimeException('Fo02 refused'));
+
+    app(BatchingService::class)->processBatch($batch);
+    // Another chain for the same batch finished before this one fails.
+    $batch->markProcessedOnce();
+    $processedAt = $batch->fresh()->processed_at;
+
+    workOneJob('default');
+
+    expect($batch->fresh()->status)->toBe('processed')
+        ->and($batch->fresh()->processed_at->equalTo($processedAt))->toBeTrue();
+});
+
+test('the catch callback of a batch chain carries only the batch id, not the service or a model', function () {
+    [$batch] = batchWithZaakAndStatus();
+
+    app(BatchingService::class)->processBatch($batch);
+
+    $payload = json_decode((string) DB::table('jobs')->value('payload'), true);
+    $command = unserialize($payload['data']['command']);
+
+    expect($command->chainCatchCallbacks)->toHaveCount(1);
+
+    $callback = $command->chainCatchCallbacks[0];
+    $closure = $callback instanceof Laravel\SerializableClosure\SerializableClosure ? $callback->getClosure() : $callback;
+    $reflection = new ReflectionFunction($closure);
+
+    expect($reflection->getClosureThis())->toBeNull()
+        ->and($reflection->getClosureUsedVariables())->toBe(['batchId' => (string) $batch->id]);
 });

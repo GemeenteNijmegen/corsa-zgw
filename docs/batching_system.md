@@ -14,7 +14,7 @@ Vertegenwoordigt een batch notificaties voor een specifieke zaak.
 - `zaak_identificatie`: Identificatienummer van de zaak
 - `locked_at`: Datum/tijd wanneer de batch werd geblokkeerd
 - `processed_at`: Datum/tijd wanneer de batch werd verwerkt
-- `status`: Status van de batch (pending, processing, processed)
+- `status`: Status van de batch (pending, processing, processed, failed); in het paneel Wachtend, In verwerking, Verwerkt en Mislukt
 - `created_at, updated_at`: Audittimestamps
 
 **Relaties:**
@@ -23,7 +23,9 @@ Vertegenwoordigt een batch notificaties voor een specifieke zaak.
 **Voornaamste Methoden:**
 - `lockForProcessing()`: Blokkeert de batch en zet de status op processing, met één voorwaardelijke update (alleen als `locked_at` nog leeg is); geeft terug of deze aanroep de batch blokkeerde
 - `markProcessed()`: Markeert de batch als verwerkt (zet processed_at en status)
-- `markProcessedOnce()`: Idem, maar alleen als de batch nog niet verwerkt is; gebruikt door `MarkBatchProcessed`
+- `markProcessedOnce()`: Idem, maar alleen als de batch nog niet verwerkt is; gebruikt door `MarkBatchProcessed`. Een mislukte batch is niet verwerkt, dus die gaat na een geslaagde herverwerking alsnog naar processed
+- `markFailedUnlessProcessed(string $id)`: Zet de batch op failed, alleen als hij nog niet verwerkt is (dezelfde voorwaarde als `markProcessedOnce()`); gebruikt door de catch van de keten
+- `isStuck()` en de scope `stuck()`: De batch staat langer dan `batching.stuck_after_minutes` op processing zonder mislukte notificatie
 - `isLocked()`: Controleert of de batch geblokkeerd is
 - `isProcessed()`: Controleert of de batch verwerkt is
 - `hasZaakAangemaakt()`: Controleert of de batch een "zaak aangemaakt"-notificatie bevat
@@ -58,6 +60,7 @@ Verwerkt een batch wanneer de timer afloopt.
    - **Met "zaak aangemaakt"**: Maakt een jobketen die de aanmaaknotificatie eerst verwerkt, gevolgd door de rest sequentieel
    - **Zonder "zaak aangemaakt"**: Maakt een jobketen die alle notificaties sequentieel verwerkt (met TODO: verificatie van zaakbestaan in Corsa als eerste stap)
 4. Hangt `MarkBatchProcessed` als laatste job aan de keten: de batch blijft op 'processing' en gaat pas naar 'processed' als alle jobs in de keten gelukt zijn (een batch zonder notificaties staat meteen op 'processed')
+5. Geeft de keten een `catch()`: mislukt een job definitief, dan stopt de keten en zet de catch de batch op 'failed', tenzij hij al 'processed' is. De catch wordt met de keten geserialiseerd en neemt alleen het id van de batch mee. Lukt de mislukte job later alsnog (opnieuw proberen vanuit Horizon), dan loopt de rest van de keten door en zet `MarkBatchProcessed` de batch van 'failed' op 'processed'
 
 #### HandleNotification (`app/Jobs/Notifications/HandleNotification.php`)
 Verwerkt een individuele notificatie.
@@ -130,7 +133,7 @@ Binnen een groep is de volgorde expliciet die van ontvangst (`created_at`, daarn
    ↓
 10. HandleNotification verhandelt elke notificatie sequentieel
     ↓
-11. Batch wordt gemarkeerd als verwerkt
+11. Batch wordt gemarkeerd als verwerkt (MarkBatchProcessed), of als mislukt als de keten bij een mislukte job stopte
 ```
 
 ## Configuratie
@@ -142,6 +145,7 @@ Het bestand `config/batching.php` definieert de systeemparameters:
 'batch_max_size' => env('NOTIFICATION_BATCH_MAX_SIZE', 100),  // Max notificaties
 'use_queue' => env('NOTIFICATION_USE_QUEUE', true),  // Gebruik queue
 'queue' => env('NOTIFICATION_QUEUE', 'default'),  // Naam van de queue
+'stuck_after_minutes' => env('NOTIFICATION_BATCH_STUCK_AFTER_MINUTES', 30),  // Minuten tot "Lang in verwerking"
 ```
 
 ### Omgevingsvariabelen
@@ -150,6 +154,7 @@ NOTIFICATION_BATCH_TIMEOUT=60
 NOTIFICATION_BATCH_MAX_SIZE=100
 NOTIFICATION_USE_QUEUE=true
 NOTIFICATION_QUEUE=default
+NOTIFICATION_BATCH_STUCK_AFTER_MINUTES=30
 ```
 
 ## Database
@@ -161,7 +166,7 @@ CREATE TABLE batches (
     zaak_identificatie VARCHAR(255),
     locked_at TIMESTAMP NULL,
     processed_at TIMESTAMP NULL,
-    status VARCHAR(255) DEFAULT 'pending',  -- pending, processing, processed
+    status VARCHAR(255) DEFAULT 'pending',  -- pending, processing, processed, failed
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
     INDEX (zaak_identificatie),
@@ -245,6 +250,11 @@ Er kunnen twee jobs tegelijk voor dezelfde batch lopen, bijvoorbeeld als de queu
 - **Dubbel uitvoeren is onschadelijk.** `HandleNotification` stopt meteen, met een logregel, als de notificatie al verwerkt of genegeerd is, en laat de rest van de keten doorgaan. `MarkBatchProcessed` houdt het tijdstip waarop de batch voor het eerst verwerkt werd.
 
 SQLite (de testsuite) kent geen rijvergrendeling; de tests tonen de logica, niet twee workers tegelijk.
+
+## Mislukte en lang lopende batches
+
+- **Mislukt.** Stopt de keten bij een definitief mislukte job, dan zet de `catch()` van de keten de batch op `failed` (rood, "Mislukt"), met dezelfde voorwaarde als `markProcessedOnce()`: een batch die al `processed` is blijft dat. Wordt de mislukte job vanuit Horizon opnieuw geprobeerd en lukt hij, dan loopt de rest van de keten door en zet `MarkBatchProcessed` de batch op `processed`. Tot dan blijft hij `failed`.
+- **Lang in verwerking.** Een batch kan ook op `processing` blijven staan zonder mislukte job, bijvoorbeeld als een job uit de queue verdwijnt. Staat hij langer dan `batching.stuck_after_minutes` (`NOTIFICATION_BATCH_STUCK_AFTER_MINUTES`, standaard 30) op `processing`, gerekend vanaf `locked_at`, en heeft hij geen mislukte notificatie, dan toont het paneel "Lang in verwerking" (oranje met een klok) in het overzicht en op de batchpagina, met een filter. Het signaal wordt bij het lezen afgeleid; de status verandert niet en er draait geen geplande taak. Een job in de keten wacht hooguit 20 keer 15 seconden (5 minuten) op een document dat een andere job verstuurt, en één poging duurt hooguit de worker-time-out (standaard 60 seconden, in productie 5 minuten, zie `config/horizon.php`), dus een gewone keten van een paar jobs is ruim binnen 30 minuten klaar, ook met wat wachttijd in de queue. Zijn batches met veel documenten normaal, verhoog dan de waarde.
 
 ## Toekomstige Verbeteringen
 

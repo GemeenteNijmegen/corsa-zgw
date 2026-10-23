@@ -24,13 +24,8 @@ class BatchesTable
                 TextColumn::make('status')
                     ->label('Status')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
-                        'pending' => 'gray',
-                        // Not orange, so it is not confused with "Niet alles verwerkt".
-                        'processing' => 'info',
-                        'processed' => 'success',
-                        default => 'gray',
-                    })
+                    ->formatStateUsing(self::statusLabel(...))
+                    ->color(self::statusColor(...))
                     ->sortable(),
                 TextColumn::make('notifications_count')
                     ->label('Notificaties')
@@ -38,6 +33,7 @@ class BatchesTable
                     ->sortable(),
                 self::failedNotificationsColumn(),
                 self::incompleteColumn(),
+                self::stuckColumn(),
                 TextColumn::make('created_at')
                     ->label('Ontvangen')
                     ->dateTime()
@@ -67,11 +63,7 @@ class BatchesTable
             ->filters([
                 SelectFilter::make('status')
                     ->label('Status')
-                    ->options([
-                        'pending' => 'Wachtend',
-                        'processing' => 'In verwerking',
-                        'processed' => 'Verwerkt',
-                    ]),
+                    ->options(self::STATUS_LABELS),
                 Filter::make('failed_notifications')
                     ->label('Met mislukte notificaties')
                     ->toggle()
@@ -80,6 +72,10 @@ class BatchesTable
                     ->label('Onvolledig')
                     ->toggle()
                     ->query(self::incomplete(...)),
+                Filter::make('stuck')
+                    ->label('Lang in verwerking')
+                    ->toggle()
+                    ->query(self::stuck(...)),
             ])
             ->recordActions([
                 ViewAction::make(),
@@ -87,6 +83,32 @@ class BatchesTable
             ->toolbarActions([])
             ->defaultSort('created_at', 'desc')
             ->poll('10s');
+    }
+
+    /**
+     * The statuses of a batch with their Dutch labels, for the badge and the filter.
+     */
+    public const STATUS_LABELS = [
+        'pending' => 'Wachtend',
+        'processing' => 'In verwerking',
+        'processed' => 'Verwerkt',
+        'failed' => 'Mislukt',
+    ];
+
+    public static function statusLabel(string $state): string
+    {
+        return self::STATUS_LABELS[$state] ?? $state;
+    }
+
+    public static function statusColor(string $state): string
+    {
+        return match ($state) {
+            // Not orange, so it is not confused with "Niet alles verwerkt" and "Lang in verwerking".
+            'processing' => 'info',
+            'processed' => 'success',
+            'failed' => 'danger',
+            default => 'gray',
+        };
     }
 
     /**
@@ -123,6 +145,23 @@ class BatchesTable
     }
 
     /**
+     * Shown for a batch that has been processing for longer than the configured threshold without a
+     * failed notification. A clock, so it is not confused with "Niet alles verwerkt".
+     */
+    public static function stuckColumn(): TextColumn
+    {
+        return TextColumn::make('stuck')
+            ->label('Lang bezig')
+            ->state(fn (Batch $record): ?string => $record->isStuck() ? 'Lang in verwerking' : null)
+            ->badge()
+            ->color('warning')
+            ->icon('heroicon-o-clock')
+            ->tooltip(fn (Batch $record): ?string => $record->isStuck()
+                ? sprintf('De batch is al langer dan %d minuten in verwerking zonder mislukte notificatie.', (int) config('batching.stuck_after_minutes', 30))
+                : null);
+    }
+
+    /**
      * @param  Builder<Batch>  $query
      * @return Builder<Batch>
      */
@@ -138,5 +177,14 @@ class BatchesTable
     private static function incomplete(Builder $query): Builder
     {
         return $query->incomplete();
+    }
+
+    /**
+     * @param  Builder<Batch>  $query
+     * @return Builder<Batch>
+     */
+    private static function stuck(Builder $query): Builder
+    {
+        return $query->stuck();
     }
 }

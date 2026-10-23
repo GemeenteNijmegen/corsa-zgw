@@ -40,6 +40,18 @@ class BatchFactory extends Factory
         ]);
     }
 
+    /**
+     * A batch whose chain stopped at a failed job.
+     */
+    public function failed(): static
+    {
+        return $this->state([
+            'status' => 'failed',
+            'locked_at' => now()->subMinute(),
+            'processed_at' => null,
+        ]);
+    }
+
     public function processed(): static
     {
         return $this->state([

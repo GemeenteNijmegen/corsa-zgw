@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -92,6 +93,29 @@ class Batch extends Model
         return $query->notProcessedYet();
     }
 
+    /**
+     * Batches that have been processing for longer than the configured threshold without a failed
+     * notification: the chain may have stopped without a failure, for instance because a job is gone
+     * from the queue. Derived when reading; the status of the batch does not change.
+     *
+     * @param  Builder<Batch>  $query
+     * @return Builder<Batch>
+     */
+    public function scopeStuck(Builder $query): Builder
+    {
+        return $query->where('status', 'processing')
+            ->where('locked_at', '<', self::stuckBefore())
+            ->whereDoesntHave('notifications', self::failedForGood(...));
+    }
+
+    /**
+     * The moment before which a batch that is still processing counts as taking long.
+     */
+    public static function stuckBefore(): CarbonInterface
+    {
+        return now()->subMinutes((int) config('batching.stuck_after_minutes', 30));
+    }
+
     public function failedNotificationsCount(): int
     {
         if (array_key_exists('failed_notifications_count', $this->getAttributes())) {
@@ -116,6 +140,18 @@ class Batch extends Model
     public function isIncomplete(): bool
     {
         return $this->status === 'processed' && $this->notProcessedNotificationsCount() > 0;
+    }
+
+    /**
+     * Processing for longer than the configured threshold without a failed notification. Uses the
+     * failed count from the overview query when it is there, so an overview does not query per row.
+     */
+    public function isStuck(): bool
+    {
+        return $this->status === 'processing'
+            && $this->locked_at !== null
+            && $this->locked_at->lt(self::stuckBefore())
+            && $this->failedNotificationsCount() === 0;
     }
 
     /**
@@ -170,7 +206,8 @@ class Batch extends Model
 
     /**
      * Mark the batch as processed, unless it is processed already. One conditional update, so a
-     * second chain for the same batch keeps the time the first one finished.
+     * second chain for the same batch keeps the time the first one finished. A failed batch is not
+     * processed, so a chain that goes on after its failed job succeeded on a retry still marks it.
      *
      * @return bool whether this call marked the batch
      */
@@ -186,6 +223,22 @@ class Batch extends Model
         $this->refresh();
 
         return $marked;
+    }
+
+    /**
+     * Mark the batch with the given id as failed, unless it is processed already. This is the catch
+     * callback of the chain of a batch, which is serialized with the chain, so it takes the id and
+     * not the model. The condition is the same as in markProcessedOnce(): a batch that a chain has
+     * finished stays processed, and a failed batch whose failed job later succeeds on a retry can
+     * still be marked as processed by the last job of its chain.
+     *
+     * @return bool whether this call marked the batch
+     */
+    public static function markFailedUnlessProcessed(string $id): bool
+    {
+        return self::whereKey($id)
+            ->whereNull('processed_at')
+            ->update(['status' => 'failed']) === 1;
     }
 
     /**

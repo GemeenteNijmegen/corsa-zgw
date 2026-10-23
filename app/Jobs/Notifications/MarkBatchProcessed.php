@@ -10,7 +10,9 @@ use Illuminate\Support\Facades\Log;
 /**
  * The last job in the chain of a batch. A chain stops at a job that fails, and a job that is
  * released runs again before the chain continues, so this only runs once every notification job
- * before it has finished. Until then the batch stays "processing".
+ * before it has finished. Until then the batch stays "processing", or "failed" when the chain
+ * stopped at a failed job; when that job succeeds on a retry, the chain goes on and this marks the
+ * failed batch as processed.
  */
 class MarkBatchProcessed implements ShouldQueue
 {
