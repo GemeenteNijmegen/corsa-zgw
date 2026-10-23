@@ -2,6 +2,7 @@
 
 namespace App\Jobs\Notifications;
 
+use App\Enums\NotificationIgnoreReason;
 use App\Models\Notification;
 use App\Services\CorsaZaakdmsService;
 use Illuminate\Bus\Batchable;
@@ -58,13 +59,21 @@ class HandleNotification implements ShouldQueue
             // Match on combination of actie and resource
             $actionKey = "{$actie}:{$resource}";
 
-            match ($actionKey) {
-                'create:zaak' => $this->handleZaakAangemaakt($corsaZaakdmsService),
-                'create:status' => $this->handleZaakPartialUpdate($corsaZaakdmsService),
-                'create:zaakinformatieobject' => $this->handleDocumentAangemaakt($corsaZaakdmsService),
-                'create:resultaat' => $this->handleResultaatAangemaakt($corsaZaakdmsService),
-                default => $this->handleUnknownAction(),
+            $handler = match ($actionKey) {
+                'create:zaak' => $this->handleZaakAangemaakt(...),
+                'create:status' => $this->handleZaakPartialUpdate(...),
+                'create:zaakinformatieobject' => $this->handleDocumentAangemaakt(...),
+                'create:resultaat' => $this->handleResultaatAangemaakt(...),
+                default => null,
             };
+
+            if ($handler === null) {
+                $this->ignoreUnsupportedAction();
+
+                return;
+            }
+
+            $handler($corsaZaakdmsService);
 
             // Mark notification as processed
             $this->notification->update([
@@ -147,9 +156,13 @@ class HandleNotification implements ShouldQueue
     }
 
     /**
-     * Handle unknown action
+     * Mark a notification with an unsupported action/resource combination as ignored.
+     *
+     * New notifications like this are already ignored on ingest; this covers notifications
+     * that were batched before that check existed. The notification is not marked as
+     * processed and the job does not fail, so the rest of the batch still runs.
      */
-    private function handleUnknownAction(): void
+    private function ignoreUnsupportedAction(): void
     {
         Log::warning('Unknown notification action/resource combination', [
             'notification_id' => $this->notification->id,
@@ -157,6 +170,6 @@ class HandleNotification implements ShouldQueue
             'resource' => $this->notification->notification['resource'] ?? 'null',
         ]);
 
-        // TODO: Implement logging or error handling for unknown actions
+        $this->notification->markIgnored(NotificationIgnoreReason::UnsupportedAction);
     }
 }

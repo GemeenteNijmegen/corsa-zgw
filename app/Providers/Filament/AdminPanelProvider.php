@@ -4,6 +4,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\Resources\Batches\BatchResource;
 use App\Filament\Resources\Catalogi\CatalogusResource;
+use App\Filament\Resources\IgnoredNotifications\IgnoredNotificationResource;
 use App\Filament\Resources\Users\UserResource;
 use App\Filament\Resources\ZaaktypeMappings\ZaaktypeMappingResource;
 use Filament\Http\Middleware\Authenticate;
@@ -17,6 +18,7 @@ use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\Support\Facades\FilamentTimezone;
 use Filament\Widgets\AccountWidget;
 use Filament\Widgets\FilamentInfoWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
@@ -28,6 +30,17 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AdminPanelProvider extends PanelProvider
 {
+    /**
+     * Timezone in which the panel shows dates and times. Timestamps are still stored in the
+     * application timezone (UTC); only the display is converted.
+     */
+    public const DISPLAY_TIMEZONE = 'Europe/Amsterdam';
+
+    public function boot(): void
+    {
+        FilamentTimezone::set(self::DISPLAY_TIMEZONE);
+    }
+
     public function panel(Panel $panel): Panel
     {
         return $panel
@@ -77,6 +90,7 @@ class AdminPanelProvider extends PanelProvider
                     NavigationGroup::make(__('Monitoring'))
                         ->items([
                             ...BatchResource::getNavigationItems(),
+                            ...IgnoredNotificationResource::getNavigationItems(),
                             NavigationItem::make(__('Job monitor'))
                                 ->icon('heroicon-m-share')
                                 ->url(fn (): string => route('horizon.index'), true),

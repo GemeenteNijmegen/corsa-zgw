@@ -400,7 +400,7 @@ class CorsaZaakdmsService
                 'natuurlijk_persoon' => [
                     'bsn' => $identificatie['inpBsn'] ?? null,
                     'identificatie' => $identificatie['anpIdentificatie'] ?? null,
-                    'geslachtsnaam' => $identificatie['geslachtsnaam'] ? $identificatie['geslachtsnaam'] : 'onbekend',
+                    'geslachtsnaam' => ($identificatie['geslachtsnaam'] ?? null) ?: 'onbekend',
                 ],
             ];
         }

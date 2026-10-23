@@ -8,6 +8,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Woweb\Zaakdms\Exceptions\InvalidZaakdmsArgumentsException;
 use Woweb\Zaakdms\Zaakdms;
 use Woweb\Zgw\Exceptions\ApiRequestException;
 use Woweb\Zgw\Exceptions\DisallowedHostException;
@@ -258,17 +259,18 @@ test('processZaakAangemaakt uses onbekend when the initiator has an empty geslac
     expect($options['initiator']['natuurlijk_persoon']['geslachtsnaam'])->toBe('onbekend');
 });
 
-test('known bug: processZaakAangemaakt fails when the natural person initiator has no geslachtsnaam field', function () {
+test('processZaakAangemaakt uses onbekend when the natural person initiator has no geslachtsnaam field', function () {
     activeZaaktypeMapping();
     $rol = natuurlijkPersoonRol();
     unset($rol['betrokkeneIdentificatie']['geslachtsnaam']);
     fakeZaakAndZaaktype(zgwZaak([$rol]));
 
     $this->zaakdms->shouldReceive('geefZaakDetails')->andThrow(new Exception('not found'));
-    $this->zaakdms->shouldNotReceive('creeerZaak');
+    captureZaakdmsCall($this->zaakdms, 'creeerZaak', $options);
 
-    expect(fn () => corsaService()->processZaakAangemaakt(makeServiceNotification('zaak', ZGW_ZAAK_URL)))
-        ->toThrow(ErrorException::class, 'Undefined array key "geslachtsnaam"');
+    corsaService()->processZaakAangemaakt(makeServiceNotification('zaak', ZGW_ZAAK_URL));
+
+    expect($options['initiator']['natuurlijk_persoon']['geslachtsnaam'])->toBe('onbekend');
 });
 
 test('processZaakAangemaakt leaves out the initiator for an unsupported betrokkene type', function () {
@@ -332,14 +334,34 @@ test('processZaakAangemaakt throws when there is no active zaaktype mapping', fu
     'inactive mapping' => [true],
 ]);
 
-test('known bug: processZaakAangemaakt fails with a TypeError when the zaak has no initiator role', function () {
+test('processZaakAangemaakt leaves out the initiator when the zaak has no initiator role', function () {
     activeZaaktypeMapping();
     fakeZaakAndZaaktype(zgwZaak([zgwRol('natuurlijk_persoon', ['inpBsn' => '000000000'], 'belanghebbende')]));
 
-    $this->zaakdms->shouldNotReceive('geefZaakDetails', 'creeerZaak');
+    $this->zaakdms->shouldReceive('geefZaakDetails')->andThrow(new Exception('not found'));
+    captureZaakdmsCall($this->zaakdms, 'creeerZaak', $options);
+
+    corsaService()->processZaakAangemaakt(makeServiceNotification('zaak', ZGW_ZAAK_URL));
+
+    expect($options)->not->toHaveKey('initiator')
+        ->and($options['identificatie'])->toBe(ZGW_ZAAK_IDENTIFICATIE);
+});
+
+test('processZaakAangemaakt fails with a validation error from the zaakdms client when the zaak has no initiator role', function () {
+    // The zaakdms client requires an initiator, so the zaak is refused before the create request is sent.
+    ZaaktypeMapping::factory()->create([
+        'zaaktype_url' => ZGW_ZAAKTYPE_URL,
+        'corsa_zaaktype_code' => '1001',
+        'is_active' => true,
+    ]);
+    fakeZaakAndZaaktype(zgwZaak([zgwRol('natuurlijk_persoon', ['inpBsn' => '000000000'], 'belanghebbende')]));
+
+    $this->partialMock(Zaakdms::class, fn ($mock) => $mock->shouldReceive('geefZaakDetails')->andThrow(new Exception('not found')));
 
     expect(fn () => corsaService()->processZaakAangemaakt(makeServiceNotification('zaak', ZGW_ZAAK_URL)))
-        ->toThrow(TypeError::class);
+        ->toThrow(InvalidZaakdmsArgumentsException::class, 'initiator.type');
+
+    Http::assertNotSent(fn (Request $request) => $request->method() === 'POST');
 });
 
 test('processZaakAangemaakt throws before calling any API when the notification has no zaak url', function () {

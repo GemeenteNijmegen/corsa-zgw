@@ -32,7 +32,7 @@ test('it rejects a request without a token with 401', function () {
     Queue::assertNothingPushed();
 });
 
-test('it accepts a valid notification and dispatches IngestNotification with exactly the six fields', function () {
+test('it accepts a valid notification and dispatches IngestNotification with exactly the validated fields', function () {
     Sanctum::actingAs(User::factory()->create());
 
     $payload = validNotificationPayload();
@@ -44,8 +44,77 @@ test('it accepts a valid notification and dispatches IngestNotification with exa
     Queue::assertPushed(IngestNotification::class, function (IngestNotification $job) use ($payload) {
         $notification = (fn () => $this->opennotification)->call($job);
 
-        return $notification->toArray() === $payload;
+        return $notification->toArray() === array_merge($payload, ['kenmerken' => []]);
     });
+});
+
+test('it passes the kenmerken of the notification on to IngestNotification', function () {
+    Sanctum::actingAs(User::factory()->create());
+
+    $kenmerken = [
+        'bronorganisatie' => '000000000',
+        'zaaktype' => 'https://openzaak.example.com/catalogi/api/v1/zaaktypen/00000000-0000-0000-0000-000000000101',
+        'vertrouwelijkheidaanduiding' => 'openbaar',
+    ];
+
+    $this->postJson(NOTIFICATIONS_ENDPOINT, validNotificationPayload(['kenmerken' => $kenmerken]))
+        ->assertOk();
+
+    Queue::assertPushed(IngestNotification::class, function (IngestNotification $job) use ($kenmerken) {
+        $notification = (fn () => $this->opennotification)->call($job);
+
+        return $notification->kenmerken === $kenmerken;
+    });
+});
+
+test('it accepts kenmerken that are null', function () {
+    Sanctum::actingAs(User::factory()->create());
+
+    $this->postJson(NOTIFICATIONS_ENDPOINT, validNotificationPayload(['kenmerken' => null]))
+        ->assertOk();
+
+    Queue::assertPushed(IngestNotification::class, function (IngestNotification $job) {
+        $notification = (fn () => $this->opennotification)->call($job);
+
+        return $notification->kenmerken === [];
+    });
+});
+
+test('it rejects values beyond the limits of the Notificaties API message', function (array $overrides, string $field) {
+    Sanctum::actingAs(User::factory()->create());
+
+    $this->postJson(NOTIFICATIONS_ENDPOINT, validNotificationPayload($overrides))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors([$field]);
+
+    Queue::assertNothingPushed();
+})->with([
+    'kanaal of 51 characters' => [['kanaal' => str_repeat('k', 51)], 'kanaal'],
+    'resource of 101 characters' => [['resource' => str_repeat('r', 101)], 'resource'],
+    'kenmerk of 1001 characters' => [['kenmerken' => ['zaaktype' => str_repeat('z', 1001)]], 'kenmerken.zaaktype'],
+    'nested kenmerk value' => [['kenmerken' => ['zaaktype' => ['nested' => 'value']]], 'kenmerken.zaaktype'],
+]);
+
+test('it accepts values at the limits of the Notificaties API message', function () {
+    Sanctum::actingAs(User::factory()->create());
+
+    $this->postJson(NOTIFICATIONS_ENDPOINT, validNotificationPayload([
+        'kanaal' => str_repeat('k', 50),
+        'resource' => str_repeat('r', 100),
+        'kenmerken' => ['zaaktype' => str_repeat('z', 1000), 'leeg' => ''],
+    ]))->assertOk();
+
+    Queue::assertPushed(IngestNotification::class, 1);
+});
+
+test('it rejects kenmerken that are not an object', function () {
+    Sanctum::actingAs(User::factory()->create());
+
+    $this->postJson(NOTIFICATIONS_ENDPOINT, validNotificationPayload(['kenmerken' => 'zaaktype']))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['kenmerken']);
+
+    Queue::assertNothingPushed();
 });
 
 test('it accepts a token created through the API token flow', function () {
@@ -72,18 +141,27 @@ test('it rejects a payload with a missing required field', function (string $fie
     Queue::assertNothingPushed();
 })->with(['actie', 'kanaal', 'resource', 'hoofdObject', 'resourceUrl', 'aanmaakdatum']);
 
-test('it rejects an unknown enum value', function (string $field, string $value) {
+test('it rejects an actie that the ZGW APIs do not publish', function (string $actie) {
     Sanctum::actingAs(User::factory()->create());
 
-    $this->postJson(NOTIFICATIONS_ENDPOINT, validNotificationPayload([$field => $value]))
+    $this->postJson(NOTIFICATIONS_ENDPOINT, validNotificationPayload(['actie' => $actie]))
         ->assertUnprocessable()
-        ->assertJsonValidationErrors([$field]);
+        ->assertJsonValidationErrors(['actie']);
 
     Queue::assertNothingPushed();
+})->with(['delete', 'remove']);
+
+test('it accepts a kanaal and resource that are not processed, so they can be stored as ignored', function (string $kanaal, string $resource) {
+    Sanctum::actingAs(User::factory()->create());
+
+    $this->postJson(NOTIFICATIONS_ENDPOINT, validNotificationPayload(['kanaal' => $kanaal, 'resource' => $resource]))
+        ->assertOk();
+
+    Queue::assertPushed(IngestNotification::class, 1);
 })->with([
-    'actie' => ['actie', 'partial_update'],
-    'kanaal' => ['kanaal', 'documenten'],
-    'resource' => ['resource', 'rol'],
+    'rol on zaken' => ['zaken', 'rol'],
+    'document on documenten' => ['documenten', 'enkelvoudiginformatieobject'],
+    'besluit on besluiten' => ['besluiten', 'besluit'],
 ]);
 
 test('it rejects a value that is not a URL', function (string $field) {
@@ -106,14 +184,14 @@ test('it rejects an aanmaakdatum that is not a date', function () {
     Queue::assertNothingPushed();
 });
 
-test('it currently accepts update and delete notifications', function (string $actie) {
+test('it accepts every action the ZGW APIs publish', function (string $actie) {
     Sanctum::actingAs(User::factory()->create());
 
     $this->postJson(NOTIFICATIONS_ENDPOINT, validNotificationPayload(['actie' => $actie]))
         ->assertOk();
 
     Queue::assertPushed(IngestNotification::class, 1);
-})->with(['update', 'delete']);
+})->with(['create', 'update', 'partial_update', 'destroy']);
 
 test('it rejects a URL that is not on a configured ZGW host', function (string $field, string $url) {
     Sanctum::actingAs(User::factory()->create());

@@ -2,6 +2,7 @@
 
 namespace App\Jobs\Notifications;
 
+use App\Enums\NotificationIgnoreReason;
 use App\Models\Notification;
 use App\Models\ZaaktypeMapping;
 use App\Services\BatchingService;
@@ -37,8 +38,16 @@ class IngestNotification implements ShouldQueue
      */
     public function handle(ZgwReader $zgw, BatchingService $batchingService): void
     {
-        if ($this->opennotification->kanaal != 'zaken') {
-            // Don't process the notification
+        if (! $this->opennotification->isSupportedKanaal()) {
+            $this->storeIgnored(NotificationIgnoreReason::UnsupportedChannel);
+
+            return;
+        }
+
+        if (! $this->opennotification->isSupportedAction()) {
+            // Ignored before fetching the zaak: after a destroy it no longer exists.
+            $this->storeIgnored(NotificationIgnoreReason::UnsupportedAction);
+
             return;
         }
 
@@ -58,12 +67,20 @@ class IngestNotification implements ShouldQueue
             return;
         }
 
-        if (! ZaaktypeMapping::where('zaaktype_url', $zaak->zaaktype)->where('is_active', true)->exists()) {
+        $mapping = ZaaktypeMapping::where('zaaktype_url', $zaak->zaaktype)->first();
+
+        if (! $mapping || ! $mapping->is_active) {
             Log::warning('Zaaktype not active or unknown, ignoring notification', [
                 'zaaktype_url' => $zaak->zaaktype,
                 'zaak_identificatie' => $zaak->identificatie,
                 'actie' => $this->opennotification->actie,
             ]);
+
+            // Keep the notification so it can be processed once the mapping is active.
+            $this->storeIgnored(
+                $mapping ? NotificationIgnoreReason::InactiveZaaktype : NotificationIgnoreReason::UnknownZaaktype,
+                $zaak->identificatie,
+            );
 
             return;
         }
@@ -90,6 +107,28 @@ class IngestNotification implements ShouldQueue
             'notification_id' => $notification->id,
             'batch_id' => $batch->id,
             'zaak_identificatie' => $zaak->identificatie,
+        ]);
+    }
+
+    /**
+     * Store a notification that is accepted but not processed, outside any batch.
+     */
+    private function storeIgnored(NotificationIgnoreReason $reason, ?string $zaakIdentificatie = null): void
+    {
+        $notification = Notification::create([
+            'zaak_identificatie' => $zaakIdentificatie,
+            'notification' => $this->opennotification->toArray(),
+            'processed' => false,
+            'ignored_at' => now(),
+            'ignored_reason' => $reason,
+        ]);
+
+        Log::info('Notification stored as ignored', [
+            'notification_id' => $notification->id,
+            'reason' => $reason->value,
+            'kanaal' => $this->opennotification->kanaal,
+            'actie' => $this->opennotification->actie,
+            'resource' => $this->opennotification->resource,
         ]);
     }
 }
