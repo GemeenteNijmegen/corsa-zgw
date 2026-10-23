@@ -130,6 +130,26 @@ test('it shows create:zaak and create:resultaat notifications', function () {
         ->assertCanSeeTableRecords([$zaakNotification, $resultaatNotification]);
 });
 
+test('it lists the notifications of a batch in processing order', function () {
+    $batch = Batch::factory()->create(['zaak_identificatie' => 'ZAAK-2026-8888']);
+    $attributes = ['batch_id' => $batch->id, 'zaak_identificatie' => $batch->zaak_identificatie];
+
+    // Created in the reverse order, so the order cannot come from the insert order.
+    $resultaat = Notification::factory()->forResultaat()->create($attributes);
+    $document = Notification::factory()->create([
+        ...$attributes,
+        'notification' => ['actie' => 'create', 'kanaal' => 'zaken', 'resource' => 'zaakinformatieobject'],
+    ]);
+    $zaak = Notification::factory()->forZaak()->create($attributes);
+
+    $records = Livewire::test(NotificationsRelationManager::class, [
+        'ownerRecord' => $batch,
+        'pageClass' => ViewBatch::class,
+    ])->instance()->getTableRecords();
+
+    expect($records->pluck('id')->all())->toBe([$zaak->id, $document->id, $resultaat->id]);
+});
+
 test('it renders the relation manager for a processed batch with processed_at', function () {
     $batch = Batch::factory()->processed()->create();
     Notification::factory()->processed()->create([

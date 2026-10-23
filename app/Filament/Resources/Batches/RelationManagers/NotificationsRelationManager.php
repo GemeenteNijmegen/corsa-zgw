@@ -18,13 +18,21 @@ class NotificationsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query) => $query->orderByRaw(
-                "CASE
-                    WHEN notification->>'$.actie' = 'create' AND notification->>'$.resource' = 'zaak' THEN 0
-                    WHEN notification->>'$.actie' = 'create' AND notification->>'$.resource' = 'resultaat' THEN 2
-                    ELSE 1
-                END ASC"
-            ))
+            ->modifyQueryUsing(function (Builder $query): Builder {
+                // Let the query grammar write the JSON paths, so the order also holds on PostgreSQL,
+                // where the MySQL style path '$.actie' does not match.
+                $grammar = $query->getQuery()->getGrammar();
+                $actie = $grammar->wrap('notification->actie');
+                $resource = $grammar->wrap('notification->resource');
+
+                return $query->orderByRaw(
+                    "CASE
+                        WHEN {$actie} = 'create' AND {$resource} = 'zaak' THEN 0
+                        WHEN {$actie} = 'create' AND {$resource} = 'resultaat' THEN 2
+                        ELSE 1
+                    END ASC"
+                );
+            })
             ->columns([
                 TextColumn::make('sort_order')
                     ->label('Volgorde')
