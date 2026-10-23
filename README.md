@@ -168,6 +168,8 @@ Requests are only sent to the hosts of the base URLs and `ZGW_ALLOWED_HOSTS`. A 
 | `ZAAKDMS_SENDER_USER` | Sender username (default: `Systeemgebruiker`) |
 | `FIXED_CORSA_ZAAKTYPE_CODE` | Fixed zaaktype code used when creating zaken in Corsa (default: `226`) |
 
+Timestamps in the StUF messages are sent in local time (`ZAAKDMS_TIMEZONE`, default `Europe/Amsterdam`), and the TLS settings `ESB__SEND_CERT`, `ESB_SEND_PK` and `ESB_VERIFY` have no default paths, so set them in every environment that connects to Corsa.
+
 ### Batching
 
 | Variable | Default | Description |
