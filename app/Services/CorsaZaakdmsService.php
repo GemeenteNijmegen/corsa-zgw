@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\DocumentSyncOutcome;
+use App\Exceptions\DocumentLockedException;
 use App\Models\DocumentSync;
 use App\Models\Notification;
 use App\Models\ZaaktypeMapping;
@@ -10,6 +11,7 @@ use App\Services\Zgw\ZgwReader;
 use App\ValueObjects\ZGW\Zaak;
 use Carbon\Carbon;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -34,6 +36,13 @@ class CorsaZaakdmsService
     private const PLACEHOLDER_CONTENT = 'Tijdelijk bestand';
 
     private const PLACEHOLDER_FILENAME = 'tijdelijk-bestand.txt';
+
+    /**
+     * How long the lock for one document lasts at most. Equal to the job time-out of the queue
+     * worker in production (config/horizon.php), so a worker that is stopped halfway does not keep
+     * the document locked for longer than a job could run.
+     */
+    public const DOCUMENT_LOCK_SECONDS = 300;
 
     public function __construct(
         private readonly ZgwReader $zgw,
@@ -200,6 +209,41 @@ class CorsaZaakdmsService
             throw new RuntimeException('Missing informatieobject url for document create');
         }
 
+        // Two jobs for the same document (a repeated delivery, or the direct route and the batch
+        // route at the same time) must not both pass the register check before either has
+        // registered the document, or the document is sent twice.
+        $lock = Cache::lock(self::documentLockKey($documentUrl), self::DOCUMENT_LOCK_SECONDS);
+
+        if (! $lock->get()) {
+            Log::info('Document is being sent by another job, trying again later', [
+                'notification_id' => $notification->id,
+                'zaak_identificatie' => $notification->zaak_identificatie,
+            ]);
+
+            throw new DocumentLockedException;
+        }
+
+        try {
+            return $this->sendDocumentToZaak($notification, $documentUrl);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Cache key of the lock for one document, keyed on its URL in the Documenten API.
+     */
+    public static function documentLockKey(string $documentUrl): string
+    {
+        return 'document-sync:'.hash('sha256', $documentUrl);
+    }
+
+    /**
+     * Check the register and the zaak, send the document and register it. Runs while holding the
+     * lock for the document.
+     */
+    private function sendDocumentToZaak(Notification $notification, string $documentUrl): DocumentSyncOutcome
+    {
         $sync = DocumentSync::where('document_url', $documentUrl)->first();
 
         if ($sync && $sync->zaak_identificatie === $notification->zaak_identificatie) {

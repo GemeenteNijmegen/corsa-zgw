@@ -3,6 +3,7 @@
 namespace App\Jobs\Notifications;
 
 use App\Enums\NotificationIgnoreReason;
+use App\Exceptions\DocumentLockedException;
 use App\Models\Notification;
 use App\Services\CorsaZaakdmsService;
 use Illuminate\Bus\Batchable;
@@ -14,6 +15,27 @@ use Woweb\Zgw\Exceptions\DisallowedHostException;
 class HandleNotification implements ShouldQueue
 {
     use Batchable, Queueable;
+
+    /**
+     * Seconds to wait before trying again while another job is sending the same document.
+     */
+    public const LOCK_RETRY_SECONDS = 15;
+
+    /**
+     * Room to try again while another job sends the same document (20 times 15 seconds covers
+     * the lock of that job). Releasing the job for that reason is not an error.
+     */
+    public int $tries = 20;
+
+    /**
+     * Any error still fails the job right away, as with a single try.
+     */
+    public int $maxExceptions = 1;
+
+    /**
+     * A time-out still fails the job right away, as with a single try.
+     */
+    public bool $failOnTimeout = true;
 
     public function __construct(private readonly Notification $notification) {}
 
@@ -84,6 +106,14 @@ class HandleNotification implements ShouldQueue
             Log::info('Notification processed successfully', [
                 'notification_id' => $this->notification->id,
             ]);
+        } catch (DocumentLockedException) {
+            // Another job is sending the same document. Once it is done the register has it, and
+            // the rest of the chain waits for this job.
+            Log::info('Document is being sent by another job, releasing the notification', [
+                'notification_id' => $this->notification->id,
+            ]);
+
+            $this->release(self::LOCK_RETRY_SECONDS);
         } catch (DisallowedHostException $e) {
             // A URL outside the configured ZGW hosts will never succeed, so fail without a retry.
             Log::warning('Notification refers to a host that is not a configured ZGW host', [

@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\NotificationRoute;
+use App\Jobs\Notifications\HandleNotification;
 use App\Jobs\Notifications\IngestNotification;
 use App\Jobs\Notifications\ProcessDocumentDirectly;
 use App\Models\Batch;
@@ -13,6 +14,7 @@ use App\Services\Zgw\ZgwReader;
 use App\ValueObjects\OpenNotification;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -439,7 +441,7 @@ test('the direct job runs on the direct queue with three retries after 30 second
     $job = new ProcessDocumentDirectly(makeDirectNotification());
 
     expect($job->queue)->toBe('direct')
-        ->and($job->tries)->toBe(4)
+        ->and(ProcessDocumentDirectly::ERROR_ATTEMPTS)->toBe(4)
         ->and($job->backoff())->toBe([30, 120, 300])
         ->and($job->tags())->toBe(['zaak:'.DIRECT_ZAAK_IDENTIFICATIE, 'route:direct']);
 });
@@ -644,4 +646,124 @@ test('a direct notification is not lost when moving it to the batch fails halfwa
     expect($notification->route)->toBe(NotificationRoute::Batch)
         ->and($notification->batch_id)->toBe($batch->id)
         ->and(app(BatchingService::class)->hasActiveTimer($batch))->toBeTrue();
+});
+
+// ─── Two jobs for the same document at the same time ─────────────────────────
+//
+// The second job runs inside the upload of the first, so it starts after the first passed the
+// register check and before the first registered the document. Without the lock per document
+// both send the document. A real second worker cannot be started in the test process, so this
+// interleaving stands in for it; the lock itself is the cache lock of the framework.
+
+test('a second delivery of the same document while the first is being sent does not send it again', function () {
+    fakeDirectApis(directDocument());
+    $first = makeDirectNotification();
+    $second = makeDirectNotification();
+    $secondJob = null;
+
+    $zaakdms = $this->mock(Zaakdms::class);
+    $zaakdms->shouldReceive('geefZaakDetails')->andReturn(corsaDirectZaakDetails());
+    $uploads = 0;
+    $zaakdms->shouldReceive('voegZaakdocumentToe')
+        ->andReturnUsing(function () use ($second, &$secondJob, &$uploads) {
+            if (++$uploads === 1) {
+                $secondJob = runDirectJob($second);
+            }
+
+            return 'DOC-REF-0011';
+        });
+
+    runDirectJob($first)->assertNotFailed();
+
+    expect($uploads)->toBe(1);
+
+    $secondJob->assertReleased(ProcessDocumentDirectly::LOCK_RETRY_SECONDS);
+    $secondJob->assertNotFailed();
+    expect($first->fresh()->processed)->toBeTrue()
+        ->and($second->fresh()->processed)->toBeFalse()
+        ->and(DocumentSync::count())->toBe(1);
+
+    // Tried again after the first job is done: the register has the document.
+    runDirectJob($second)->assertNotFailed();
+
+    expect($second->fresh()->processed)->toBeTrue()
+        ->and(DocumentSync::count())->toBe(1);
+});
+
+test('the batch route waits for a direct job that is sending the same document', function () {
+    fakeDirectApis(directDocument());
+    $direct = makeDirectNotification();
+    $batched = Notification::factory()->create([
+        'zaak_identificatie' => DIRECT_ZAAK_IDENTIFICATIE,
+        'notification' => directOpenNotification()->toArray(),
+    ]);
+    $batchJob = null;
+
+    $zaakdms = $this->mock(Zaakdms::class);
+    $zaakdms->shouldReceive('geefZaakDetails')->andReturn(corsaDirectZaakDetails());
+    $uploads = 0;
+    $zaakdms->shouldReceive('voegZaakdocumentToe')
+        ->andReturnUsing(function () use ($batched, &$batchJob, &$uploads) {
+            if (++$uploads === 1) {
+                $batchJob = (new HandleNotification($batched))->withFakeQueueInteractions();
+                $batchJob->handle(app(CorsaZaakdmsService::class));
+            }
+
+            return 'DOC-REF-0011';
+        });
+
+    runDirectJob($direct)->assertNotFailed();
+
+    expect($uploads)->toBe(1);
+
+    $batchJob->assertReleased(HandleNotification::LOCK_RETRY_SECONDS);
+    $batchJob->assertNotFailed();
+    expect($batched->fresh()->processed)->toBeFalse();
+
+    $retry = (new HandleNotification($batched->fresh()))->withFakeQueueInteractions();
+    $retry->handle(app(CorsaZaakdmsService::class));
+
+    $retry->assertNotFailed();
+    expect($batched->fresh()->processed)->toBeTrue()
+        ->and(DocumentSync::count())->toBe(1);
+});
+
+test('the direct job does not contact the document management system while the document is locked', function () {
+    fakeDirectApis(directDocument());
+    $this->mock(Zaakdms::class)->shouldNotReceive('geefZaakDetails', 'voegZaakdocumentToe');
+
+    $lock = Cache::lock(CorsaZaakdmsService::documentLockKey(DIRECT_EIO_URL), CorsaZaakdmsService::DOCUMENT_LOCK_SECONDS);
+    expect($lock->get())->toBeTrue();
+
+    $notification = makeDirectNotification();
+    $job = runDirectJob($notification);
+
+    $job->assertReleased(ProcessDocumentDirectly::LOCK_RETRY_SECONDS);
+    $job->assertNotFailed();
+    expect($notification->fresh()->processed)->toBeFalse()
+        ->and($notification->fresh()->route)->toBe(NotificationRoute::Direct);
+});
+
+test('the lock for a document is released when sending it fails', function () {
+    fakeDirectApis(directDocument());
+    $zaakdms = $this->mock(Zaakdms::class);
+    $zaakdms->shouldReceive('geefZaakDetails')->andReturn(corsaDirectZaakDetails());
+    $zaakdms->shouldReceive('voegZaakdocumentToe')->once()->andThrow(new Exception('Fo02 refused'));
+
+    runDirectJob(makeDirectNotification())->assertFailed();
+
+    expect(Cache::lock(CorsaZaakdmsService::documentLockKey(DIRECT_EIO_URL), 1)->get())->toBeTrue();
+});
+
+test('waiting for the lock does not use up the retries of either job', function () {
+    $this->freezeTime();
+    $direct = new ProcessDocumentDirectly(makeDirectNotification());
+    $batch = new HandleNotification(makeDirectNotification());
+
+    expect($direct->retryUntil()->getTimestamp())->toBe(now()->addMinutes(ProcessDocumentDirectly::RETRY_MINUTES)->getTimestamp())
+        ->and(property_exists($direct, 'tries'))->toBeFalse()
+        ->and($batch->tries)->toBe(20)
+        ->and($batch->maxExceptions)->toBe(1)
+        ->and($batch->failOnTimeout)->toBeTrue()
+        ->and($batch->tries * HandleNotification::LOCK_RETRY_SECONDS)->toBeGreaterThanOrEqual(CorsaZaakdmsService::DOCUMENT_LOCK_SECONDS);
 });

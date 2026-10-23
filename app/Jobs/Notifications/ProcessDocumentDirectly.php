@@ -4,10 +4,12 @@ namespace App\Jobs\Notifications;
 
 use App\Enums\DocumentSyncOutcome;
 use App\Enums\NotificationRoute;
+use App\Exceptions\DocumentLockedException;
 use App\Models\Batch;
 use App\Models\Notification;
 use App\Services\BatchingService;
 use App\Services\CorsaZaakdmsService;
+use DateTimeInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Http\Client\ConnectionException;
@@ -34,11 +36,29 @@ class ProcessDocumentDirectly implements ShouldQueue
     /**
      * The first attempt plus three retries, for temporary HTTP errors only.
      */
-    public int $tries = 4;
+    public const ERROR_ATTEMPTS = 4;
+
+    /**
+     * Seconds to wait before trying again while another job is sending the same document.
+     */
+    public const LOCK_RETRY_SECONDS = 15;
+
+    /**
+     * Minutes after dispatch in which the job may run again. Bounded by time instead of a number of
+     * tries, because waiting for another job that sends the same document is not an error and
+     * should not use up the retries for temporary errors. Covers the three retries (7.5 minutes),
+     * the time the attempts themselves take and the lock of another job.
+     */
+    public const RETRY_MINUTES = 20;
 
     public function __construct(private readonly Notification $notification)
     {
         $this->onQueue(self::QUEUE);
+    }
+
+    public function retryUntil(): DateTimeInterface
+    {
+        return now()->addMinutes(self::RETRY_MINUTES);
     }
 
     /**
@@ -82,8 +102,13 @@ class ProcessDocumentDirectly implements ShouldQueue
 
         try {
             $outcome = $corsaZaakdmsService->addDocumentToZaak($this->notification);
+        } catch (DocumentLockedException) {
+            // Another job is sending the same document. Once it is done the register has it.
+            $this->release(self::LOCK_RETRY_SECONDS);
+
+            return;
         } catch (Throwable $e) {
-            if ($this->isTemporary($e) && $this->attempts() < $this->tries) {
+            if ($this->isTemporary($e) && $this->attempts() < self::ERROR_ATTEMPTS) {
                 Log::warning('Temporary error while processing document directly, retrying', [
                     'notification_id' => $this->notification->id,
                     'attempt' => $this->attempts(),
