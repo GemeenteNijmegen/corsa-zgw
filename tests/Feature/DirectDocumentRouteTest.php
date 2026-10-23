@@ -369,7 +369,24 @@ test('the direct job retries a temporary error and keeps the notification unproc
     'server error' => [fn () => new Illuminate\Http\Client\RequestException(
         new Illuminate\Http\Client\Response(new GuzzleHttp\Psr7\Response(503))
     )],
+    'request time-out' => [fn () => new Illuminate\Http\Client\RequestException(
+        new Illuminate\Http\Client\Response(new GuzzleHttp\Psr7\Response(408))
+    )],
+    'rate limited' => [fn () => new Illuminate\Http\Client\RequestException(
+        new Illuminate\Http\Client\Response(new GuzzleHttp\Psr7\Response(429))
+    )],
 ]);
+
+test('the direct job fails without a retry on a client error from the ZGW APIs', function () {
+    Http::fake([DIRECT_ZIO_URL => Http::response('', 404)]);
+    $this->mock(Zaakdms::class)->shouldNotReceive('voegZaakdocumentToe');
+
+    $notification = makeDirectNotification();
+    $job = runDirectJob($notification);
+
+    $job->assertFailed();
+    expect($notification->fresh()->processed)->toBeFalse();
+});
 
 test('the direct job retries a temporary error from the ZGW APIs', function () {
     Http::fake([DIRECT_ZIO_URL => Http::response('', 502)]);
