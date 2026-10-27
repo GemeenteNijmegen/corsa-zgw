@@ -62,13 +62,13 @@ Content-Type: application/json
 
 Four notification types on the `zaken` kanaal are processed, all with `actie` `create`, plus changes to a document on the `documenten` kanaal. See [docs/API-Call-mapping.md](docs/API-Call-mapping.md) for full payload examples.
 
-| Kanaal       | `actie`                     | `resource`                    | Effect in Corsa                          | Order in a batch |
-|--------------|-----------------------------|-------------------------------|------------------------------------------|------------------|
-| `zaken`      | `create`                    | `zaak`                        | Creates a new zaak                       | First |
-| `zaken`      | `create`                    | `status`                      | Updates the zaak status                  | Middle |
-| `zaken`      | `create`                    | `zaakinformatieobject`        | Uploads a document to the zaak           | Middle |
-| `documenten` | `update`, `partial_update`  | `enkelvoudiginformatieobject` | Sends the newest version of the document | After the middle group |
-| `zaken`      | `create`                    | `resultaat`                   | Closes the zaak with a final outcome     | Last |
+| Kanaal       | `actie`                    | `resource`                    | Effect in Corsa                          | Order in a batch       |
+| ------------ | -------------------------- | ----------------------------- | ---------------------------------------- | ---------------------- |
+| `zaken`      | `create`                   | `zaak`                        | Creates a new zaak                       | First                  |
+| `zaken`      | `create`                   | `status`                      | Updates the zaak status                  | Middle                 |
+| `zaken`      | `create`                   | `zaakinformatieobject`        | Uploads a document to the zaak           | Middle                 |
+| `documenten` | `update`, `partial_update` | `enkelvoudiginformatieobject` | Sends the newest version of the document | After the middle group |
+| `zaken`      | `create`                   | `resultaat`                   | Closes the zaak with a final outcome     | Last                   |
 
 Within each group a batch keeps the order in which the notifications were received.
 
@@ -139,50 +139,50 @@ The following environment variables must be configured:
 
 ### OpenZaak (ZGW API)
 
-| Variable | Description |
-|---|---|
-| `OPENZAAK_URL` | Root URL of the OpenZaak instance (for example `https://openzaak.example.com/`) |
-| `OPENZAAK_CLIENT_ID` | Client ID of this application in OpenZaak |
-| `OPENZAAK_CLIENT_SECRET` | Client secret of this application in OpenZaak. Must be at least 32 bytes long. |
+| Variable                 | Description                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------- |
+| `OPENZAAK_URL`           | Root URL of the OpenZaak instance (for example `https://openzaak.example.com/`) |
+| `OPENZAAK_CLIENT_ID`     | Client ID of this application in OpenZaak                                       |
+| `OPENZAAK_CLIENT_SECRET` | Client secret of this application in OpenZaak. Must be at least 32 bytes long.  |
 
 The ZGW APIs are called through `woweb/laravel-zgw-client`, configured in `config/zgw.php`. The variables below are optional. When a variable is not set, the value falls back to the `OPENZAAK_*` variables above.
 
-| Variable | Default | Description |
-|---|---|---|
-| `ZGW_ZAKEN_BASE_URL` | `{OPENZAAK_URL}zaken/api/v1/` | Full base URL of the Zaken API |
-| `ZGW_CATALOGI_BASE_URL` | `{OPENZAAK_URL}catalogi/api/v1/` | Full base URL of the Catalogi API |
-| `ZGW_DOCUMENTEN_BASE_URL` | `{OPENZAAK_URL}documenten/api/v1/` | Full base URL of the Documenten API |
-| `ZGW_CLIENT_ID` | `OPENZAAK_CLIENT_ID` | Client ID used to sign the JWT |
-| `ZGW_CLIENT_SECRET` | `OPENZAAK_CLIENT_SECRET` | Client secret used to sign the JWT (at least 32 bytes) |
-| `ZGW_USER_ID` | `application` | `user_id` claim, shown in the OpenZaak audit trail |
-| `ZGW_USER_REPRESENTATION` | `Application background task` | `user_representation` claim, shown in the OpenZaak audit trail |
-| `ZGW_VERSION` | `1.7` | ZGW standard release of the OpenZaak instance (`1.5`, `1.6` or `1.7`) |
-| `ZGW_ALLOWED_HOSTS` | empty | Extra hosts the client may call, comma separated. Only needed when OpenZaak returns links on a host other than the base URLs. |
+| Variable                  | Default                            | Description                                                                                                                   |
+| ------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `ZGW_ZAKEN_BASE_URL`      | `{OPENZAAK_URL}zaken/api/v1/`      | Full base URL of the Zaken API                                                                                                |
+| `ZGW_CATALOGI_BASE_URL`   | `{OPENZAAK_URL}catalogi/api/v1/`   | Full base URL of the Catalogi API                                                                                             |
+| `ZGW_DOCUMENTEN_BASE_URL` | `{OPENZAAK_URL}documenten/api/v1/` | Full base URL of the Documenten API                                                                                           |
+| `ZGW_CLIENT_ID`           | `OPENZAAK_CLIENT_ID`               | Client ID used to sign the JWT                                                                                                |
+| `ZGW_CLIENT_SECRET`       | `OPENZAAK_CLIENT_SECRET`           | Client secret used to sign the JWT (at least 32 bytes)                                                                        |
+| `ZGW_USER_ID`             | `application`                      | `user_id` claim, shown in the OpenZaak audit trail                                                                            |
+| `ZGW_USER_REPRESENTATION` | `Application background task`      | `user_representation` claim, shown in the OpenZaak audit trail                                                                |
+| `ZGW_VERSION`             | `1.7`                              | ZGW standard release of the OpenZaak instance (`1.5`, `1.6` or `1.7`)                                                         |
+| `ZGW_ALLOWED_HOSTS`       | empty                              | Extra hosts the client may call, comma separated. Only needed when OpenZaak returns links on a host other than the base URLs. |
 
 Requests are only sent to the hosts of the base URLs and `ZGW_ALLOWED_HOSTS`. A notification whose `hoofdObject` or `resourceUrl` is on another host is rejected with a 422.
 
 ### Corsa ZaakDMS
 
-| Variable | Description |
-|---|---|
-| `ZAAKDMS_URL` | SOAP endpoint URL of the Corsa ZaakDMS service |
-| `ZAAKDMS_SENDER_APPLICATION` | Sender application identifier |
-| `ZAAKDMS_SENDER_ADMINISTRATIVE` | Sender administrative unit |
-| `ZAAKDMS_SENDER_ORGANISATION` | Sender organisation name |
-| `ZAAKDMS_SENDER_USER` | Sender username (default: `Systeemgebruiker`) |
-| `FIXED_CORSA_ZAAKTYPE_CODE` | Fixed zaaktype code used when creating zaken in Corsa (default: `226`) |
+| Variable                        | Description                                                            |
+| ------------------------------- | ---------------------------------------------------------------------- |
+| `ZAAKDMS_URL`                   | SOAP endpoint URL of the Corsa ZaakDMS service                         |
+| `ZAAKDMS_SENDER_APPLICATION`    | Sender application identifier                                          |
+| `ZAAKDMS_SENDER_ADMINISTRATIVE` | Sender administrative unit                                             |
+| `ZAAKDMS_SENDER_ORGANISATION`   | Sender organisation name                                               |
+| `ZAAKDMS_SENDER_USER`           | Sender username (default: `Systeemgebruiker`)                          |
+| `FIXED_CORSA_ZAAKTYPE_CODE`     | Fixed zaaktype code used when creating zaken in Corsa (default: `226`) |
 
 Timestamps in the StUF messages are sent in local time (`ZAAKDMS_TIMEZONE`, default `Europe/Amsterdam`), and the TLS settings `ESB__SEND_CERT`, `ESB_SEND_PK` and `ESB_VERIFY` have no default paths, so set them in every environment that connects to Corsa.
 
 ### Batching
 
-| Variable | Default | Description |
-|---|---|---|
-| `NOTIFICATION_BATCH_TIMEOUT` | `60` | Seconds to wait before processing a batch |
-| `NOTIFICATION_BATCH_MAX_SIZE` | `100` | Maximum notifications in a single batch |
-| `NOTIFICATION_USE_QUEUE` | `true` | Whether to process via queue |
-| `NOTIFICATION_QUEUE` | `default` | Queue name for batch processing jobs |
-| `NOTIFICATION_BATCH_STUCK_AFTER_MINUTES` | `30` | Minutes after which a batch that is still processing, without a failed notification, is flagged as taking long |
+| Variable                                 | Default   | Description                                                                                                    |
+| ---------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------- |
+| `NOTIFICATION_BATCH_TIMEOUT`             | `60`      | Seconds to wait before processing a batch                                                                      |
+| `NOTIFICATION_BATCH_MAX_SIZE`            | `100`     | Maximum notifications in a single batch                                                                        |
+| `NOTIFICATION_USE_QUEUE`                 | `true`    | Whether to process via queue                                                                                   |
+| `NOTIFICATION_QUEUE`                     | `default` | Queue name for batch processing jobs                                                                           |
+| `NOTIFICATION_BATCH_STUCK_AFTER_MINUTES` | `30`      | Minutes after which a batch that is still processing, without a failed notification, is flagged as taking long |
 
 Documents on the direct route (new links in bewerking and changes) are processed on the `direct` queue. The Horizon supervisor works on both `direct` and `default` (`config/horizon.php`). With balancing enabled, Horizon keeps at least one worker process per queue, so a direct job does not wait behind a batch chain.
 
@@ -196,31 +196,35 @@ Documents on the direct route (new links in bewerking and changes) are processed
 ### Quick Start (Docker using Sail)
 
 1. Clone the repository:
-   ```bash
-   git clone [repository-url]
-   cd [repository-url]
-   ```
+
+    ```bash
+    git clone [repository-url]
+    cd [repository-url]
+    ```
 
 2. Copy the environment file and set your settings:
-   ```bash
-   cp .env.example .env
-   ```
+
+    ```bash
+    cp .env.example .env
+    ```
 
 3. Start the application using Sail:
-   ```bash
-   ./vendor/bin/sail up -d
-   ```
+
+    ```bash
+    ./vendor/bin/sail up -d
+    ```
 
 4. Generate an app key, run migrations and install dependencies:
-   ```bash
-   ./vendor/bin/sail artisan key:generate
-   ./vendor/bin/sail artisan migrate
-   ./vendor/bin/sail npm install && ./vendor/bin/sail npm run dev
-   ```
+    ```bash
+    ./vendor/bin/sail artisan key:generate
+    ./vendor/bin/sail artisan migrate
+    ./vendor/bin/sail npm install && ./vendor/bin/sail npm run dev
+    ```
 
 ### Or run locally without Sail
 
 If you prefer a local setup:
+
 ```bash
 composer install
 npm install && npm run dev
@@ -228,7 +232,20 @@ php artisan migrate
 php artisan serve
 ```
 
+### Creating an admin panel user
+
+Create a user for the Filament admin panel with:
+
+```bash
+./vendor/bin/sail artisan make:filament-user   # or: php artisan make:filament-user
+```
+
+The command asks for a name, email and password. Every user has full access to the admin panel; there are no roles.
+
+Do not use `db:seed` on a deployed environment: the seeder creates a test user with a default password.
+
 ### Dependency updates
+
 ```
 ./vendor/bin/sail composer update
 ```
@@ -238,6 +255,7 @@ php artisan serve
 ### Laravel Pint
 
 Code style is enforced using Laravel Pint:
+
 ```bash
 ./vendor/bin/pint
 ```
@@ -245,6 +263,7 @@ Code style is enforced using Laravel Pint:
 ### Pest
 
 Pest is used for writing and running tests:
+
 ```bash
 ./vendor/bin/pest
 ```
@@ -252,6 +271,7 @@ Pest is used for writing and running tests:
 ### PHPStan
 
 We use PHPStan for static code analysis to catch bugs early. It will be fully integrated soon. To run:
+
 ```bash
 ./vendor/bin/phpstan analyse --memory-limit=2G
 ```
@@ -259,6 +279,7 @@ We use PHPStan for static code analysis to catch bugs early. It will be fully in
 ### Rector
 
 Rector helps upgrade and refactor the codebase for Laravel 12 compatibility:
+
 ```bash
 ./vendor/bin/rector process
 ```
