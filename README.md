@@ -126,7 +126,7 @@ Two jobs for the same batch can run at the same time, for example when the queue
 ## Technical Stack
 
 - **Framework**: Laravel 12.x
-- **PHP Version**: PHP 8.4
+- **PHP Version**: PHP 8.5
 - **Frontend**: Tailwind CSS v4, Vite
 - **Admin Panel**: Filament v4
 - **Database**: PostgreSQL

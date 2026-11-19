@@ -1,8 +1,8 @@
 # syntax = docker/dockerfile:experimental
 
-ARG PHP_VERSION=8.4
+ARG PHP_VERSION=8.5
 ARG NODE_VERSION=24
-FROM ubuntu:22.04 AS base
+FROM ubuntu:26.10 AS base
 LABEL fly_launch_runtime="laravel"
 
 # PHP_VERSION needs to be repeated here
@@ -28,16 +28,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Prepare base container: 
 # 1. Install PHP, Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-COPY .fly/php/ondrej_ubuntu_php.gpg /etc/apt/trusted.gpg.d/ondrej_ubuntu_php.gpg
 ADD .fly/php/packages/${PHP_VERSION}.txt /tmp/php-packages.txt
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gnupg2 ca-certificates git-core curl zip unzip \
+    && apt-get install -y --no-install-recommends gnupg2 ca-certificates git curl zip unzip \
     rsync vim-tiny htop sqlite3 nginx supervisor cron \
     && ln -sf /usr/bin/vim.tiny /etc/alternatives/vim \
     && ln -sf /etc/alternatives/vim /usr/bin/vim \
-    && echo "deb http://ppa.launchpad.net/ondrej/php/ubuntu jammy main" > /etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list \
-    && apt-get update \
     && apt-get -y --no-install-recommends install $(cat /tmp/php-packages.txt) \
     && ln -sf /usr/sbin/php-fpm${PHP_VERSION} /usr/sbin/php-fpm \
     && mkdir -p /var/www/html/public && echo "index" > /var/www/html/public/index.php \
