@@ -2,7 +2,7 @@
 
 ARG PHP_VERSION=8.4
 ARG NODE_VERSION=24
-FROM ubuntu:26.10 AS base
+FROM ubuntu:24.04 AS base
 LABEL fly_launch_runtime="laravel"
 
 # PHP_VERSION needs to be repeated here
@@ -36,7 +36,7 @@ RUN apt-get update \
     rsync vim-tiny htop sqlite3 nginx supervisor cron \
     && ln -sf /usr/bin/vim.tiny /etc/alternatives/vim \
     && ln -sf /etc/alternatives/vim /usr/bin/vim \
-    && echo "deb http://ppa.launchpad.net/ondrej/php/ubuntu jammy main" > /etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list \
+    && echo "deb http://ppa.launchpad.net/ondrej/php/ubuntu noble main" > /etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list \
     && apt-get update \
     && apt-get -y --no-install-recommends install $(cat /tmp/php-packages.txt) \
     && ln -sf /usr/sbin/php-fpm${PHP_VERSION} /usr/sbin/php-fpm \
